@@ -35,17 +35,28 @@ jobs:
         # 添加 ARM64 源
         echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse" | sudo tee /etc/apt/sources.list.d/arm64.list
         echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list.d/arm64.list
+        echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list.d/arm64.list
         
-        # 更新并安装 Qt ARM64 包
+        # 更新包列表
         sudo apt-get update || true
-        sudo apt-get install -y \
+        
+        # 安装基础 Qt5 库
+        sudo apt-get install -y --no-install-recommends \
           libqt5core5a:arm64 \
           libqt5gui5:arm64 \
           libqt5widgets5:arm64 \
+          libqt5network5:arm64 \
+          libqt5dbus5:arm64 || echo "Some Qt base packages might not be available"
+        
+        # 尝试安装 WebEngine（可能不可用）
+        sudo apt-get install -y --no-install-recommends \
           libqt5webengine5:arm64 \
-          libqt5webenginewidgets5:arm64 \
-          qtbase5-dev:arm64 \
-          qtwebengine5-dev:arm64 || echo "Some packages might not be available"
+          libqt5webenginewidgets5:arm64 || echo "Qt WebEngine packages not available for ARM64"
+        
+        # 安装开发包
+        sudo apt-get install -y --no-install-recommends \
+          qtbase5-dev-tools:arm64 \
+          qt5-qmake:arm64 || echo "Some development tools might not be available"
     
     - name: Configure CMake for cross-compilation
       run: |
@@ -101,7 +112,7 @@ jobs:
         ## 安装 Qt 依赖
         如果系统提示缺少 Qt 库，请运行：
         ```
-        sudo apt-get install qt5-default libqt5webengine5
+        sudo apt-get install qtbase5-dev libqt5widgets5 libqt5webengine5
         ```
         EOF
         
