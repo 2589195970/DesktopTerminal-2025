@@ -78,4 +78,7 @@ exit.log
 # Generated documentation
 docs/_build/
 docs/_static/
-docs/_templates/ 
+docs/_templates/
+
+# 排除 GitHub Actions 工作流文件
+!.github/ 
