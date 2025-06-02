@@ -1,0 +1,114 @@
+name: Build Kylin x86_64 AppImage
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-kylin-x86:
+    runs-on: ubuntu-20.04
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          qt5-default \
+          qtwebengine5-dev \
+          libqt5websockets5-dev \
+          libqt5webchannel5-dev \
+          libqt5webengine5 \
+          libgl1-mesa-dev \
+          libglu1-mesa-dev \
+          libx11-dev \
+          libxext-dev \
+          libxfixes-dev \
+          libxi-dev \
+          libxrender-dev \
+          libxcb1-dev \
+          libxcb-glx0-dev \
+          libxcb-keysyms1-dev \
+          libxcb-image0-dev \
+          libxcb-shm0-dev \
+          libxcb-icccm4-dev \
+          libxcb-sync0-dev \
+          libxcb-xfixes0-dev \
+          libxcb-shape0-dev \
+          libxcb-randr0-dev \
+          libxcb-render-util0-dev \
+          libxkbcommon-dev \
+          libxkbcommon-x11-dev \
+          file
+    
+    - name: Configure CMake
+      run: |
+        mkdir build
+        cd build
+        cmake ../qt-shell -DCMAKE_BUILD_TYPE=Release
+    
+    - name: Build application
+      run: |
+        cd build
+        make -j$(nproc)
+    
+    - name: Prepare AppDir
+      run: |
+        mkdir -p AppDir/usr/bin
+        mkdir -p AppDir/usr/share/applications
+        mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+        mkdir -p AppDir/resources
+        
+        # 复制可执行文件
+        cp build/qt-shell AppDir/usr/bin/
+        
+        # 复制资源文件
+        cp -r resources/* AppDir/resources/
+        
+        # 创建桌面文件
+        cat > AppDir/usr/share/applications/qt-shell.desktop <<EOF
+        [Desktop Entry]
+        Type=Application
+        Name=机考霸屏桌面端
+        Name[zh_CN]=机考霸屏桌面端
+        Comment=教育考试场景专用安全浏览器
+        Comment[zh_CN]=教育考试场景专用安全浏览器
+        Exec=qt-shell
+        Icon=qt-shell
+        Categories=Education;Network;
+        Terminal=false
+        StartupNotify=true
+        EOF
+        
+        # 复制图标（暂时使用 simple_icon.ico，后续可以转换为 PNG）
+        cp resources/simple_icon.ico AppDir/usr/share/icons/hicolor/256x256/apps/qt-shell.ico
+    
+    - name: Download linuxdeployqt
+      run: |
+        wget https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage
+        chmod +x linuxdeployqt-continuous-x86_64.AppImage
+    
+    - name: Create AppImage
+      run: |
+        # 设置环境变量，避免沙箱问题
+        export APPIMAGE_EXTRACT_AND_RUN=1
+        
+        # 部署 Qt 依赖
+        ./linuxdeployqt-continuous-x86_64.AppImage AppDir/usr/share/applications/*.desktop -appimage -no-translations -qmake=/usr/lib/qt5/bin/qmake
+        
+        # 重命名输出文件
+        mv *.AppImage qt-shell-kylin-x86_64.AppImage
+    
+    - name: Upload AppImage
+      uses: actions/upload-artifact@v4
+      with:
+        name: kylin-x86_64-appimage
+        path: qt-shell-kylin-x86_64.AppImage 
