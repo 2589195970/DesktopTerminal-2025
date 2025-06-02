@@ -1,0 +1,15 @@
+This is a placeholder for logo.ico file.
+
+To generate the actual .ico file from logo.svg:
+
+1. Use online converter: https://convertio.co/svg-ico/
+2. Or use ImageMagick:
+   convert logo.svg -resize 256x256 logo.ico
+3. Or use Inkscape:
+   inkscape logo.svg --export-filename=logo.ico
+
+The .ico file should contain multiple sizes:
+- 16x16
+- 32x32
+- 48x48
+- 256x256 

@@ -1,0 +1,81 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Build directories
+build/
+build-*/
+deploy/
+Output/
+cmake-build-*/
+
+# Qt
+*.pro.user
+*.pro.user.*
+*.qbs.user
+*.qbs.user.*
+*.moc
+moc_*.cpp
+moc_*.h
+qrc_*.cpp
+ui_*.h
+*.qmlc
+*.jsc
+Makefile*
+*build-*
+*.qm
+*.prl
+
+# Qt Creator
+*.autosave
+
+# Qt Creator Qml
+*.qmlproject.user
+*.qmlproject.user.*
+
+# Qt Creator CMake
+CMakeLists.txt.user*
+
+# Qt Creator 4.8< compilation database
+compile_commands.json
+
+# Qt Creator local machine specific files for imported projects
+*creator.user*
+
+# Logs
+*.log
+exit.log
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Binary files
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Archives
+*.zip
+*.tar.gz
+*.rar
+
+# Generated documentation
+docs/_build/
+docs/_static/
+docs/_templates/ 

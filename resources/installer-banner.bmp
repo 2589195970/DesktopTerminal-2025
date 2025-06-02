@@ -1,0 +1,12 @@
+This is a placeholder for installer-banner.bmp file.
+
+The installer banner should be:
+- Size: 164x314 pixels
+- Format: BMP (24-bit)
+- Content: Application logo and name
+
+To create:
+1. Design in any graphics editor
+2. Export as BMP format
+3. Or convert from PNG:
+   convert banner.png -resize 164x314 installer-banner.bmp 
