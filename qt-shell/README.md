@@ -28,7 +28,7 @@ export CMAKE_PREFIX_PATH="/usr/local/opt/qt@5/lib/cmake:$CMAKE_PREFIX_PATH"
 #### Ubuntu/Linux/麒麟
 ```bash
 sudo apt update
-sudo apt install qt5-default qtwebengine5-dev cmake build-essential
+sudo apt install qtbase5-dev qtwebengine5-dev cmake build-essential
 ```
 
 #### Windows
