@@ -59,6 +59,8 @@ jobs:
         cd %GITHUB_WORKSPACE%
         dir resources
         mkdir Output
+        echo === Checking installer.nsi content ===
+        findstr /n "StrRep" installer.nsi || echo No StrRep found
         makensis -DARCH=x86 installer.nsi
     
     - name: Upload installer
