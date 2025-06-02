@@ -33,9 +33,10 @@ InstallDirRegKey HKLM "Software\${COMPANYNAME}\${APPNAME}" "InstallDir"
 RequestExecutionLevel admin
 
 ; 界面设置
-!define MUI_ICON "resources\logo.ico"
-!define MUI_UNICON "resources\logo.ico"
-!define MUI_WELCOMEFINISHPAGE_BITMAP "resources\installer-banner.bmp"
+; 暂时注释掉图标，因为可能存在格式问题
+; !define MUI_ICON "resources\logo.ico"
+; !define MUI_UNICON "resources\logo.ico"
+; !define MUI_WELCOMEFINISHPAGE_BITMAP "resources\installer-banner.bmp"
 
 ; 页面
 !insertmacro MUI_PAGE_WELCOME

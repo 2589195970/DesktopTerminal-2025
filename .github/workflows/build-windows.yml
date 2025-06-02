@@ -24,6 +24,8 @@ jobs:
         target: 'desktop'
         arch: 'win32_msvc2019'
         modules: 'qtwebengine'
+        set-env: true
+        tools-only: false
     
     - name: Setup MSVC
       uses: ilammy/msvc-dev-cmd@v1
@@ -31,25 +33,32 @@ jobs:
         arch: x86
     
     - name: Configure CMake
+      shell: cmd
       run: |
         mkdir build
         cd build
-        cmake ../qt-shell -G "NMake Makefiles" -A Win32
+        cmake ../qt-shell -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release
     
     - name: Build application
+      shell: cmd
       run: |
         cd build
         nmake
     
     - name: Deploy Qt dependencies
+      shell: cmd
       run: |
         mkdir deploy
         copy build\qt-shell.exe deploy\
-        windeployqt --dir deploy --qmldir ../qt-shell deploy\qt-shell.exe
+        windeployqt --dir deploy --qmldir qt-shell deploy\qt-shell.exe
     
     - name: Create installer with NSIS
+      shell: cmd
       run: |
         choco install nsis -y
+        cd %GITHUB_WORKSPACE%
+        dir resources
+        mkdir Output
         makensis -DARCH=x86 installer.nsi
     
     - name: Upload installer
