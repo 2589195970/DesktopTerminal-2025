@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-kylin-arm:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     
     steps:
     - name: Checkout code
@@ -33,8 +33,8 @@ jobs:
         sudo dpkg --add-architecture arm64
         
         # 添加 ARM64 源
-        echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports focal main restricted universe multiverse" | sudo tee /etc/apt/sources.list.d/arm64.list
-        echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports focal-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list.d/arm64.list
+        echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse" | sudo tee /etc/apt/sources.list.d/arm64.list
+        echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list.d/arm64.list
         
         # 更新并安装 Qt ARM64 包
         sudo apt-get update || true
