@@ -92,56 +92,18 @@ Section "Uninstall"
     Delete "$INSTDIR\*.*"
     RMDir /r "$INSTDIR"
     
-    ; 读取架构后缀
-    ReadRegStr $0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "DisplayName"
-    ${StrRep} $0 $0 "${APPNAME}" ""
-    
-    ; 删除快捷方式
-    Delete "$SMPROGRAMS\${APPNAME}$0\*.*"
-    RMDir "$SMPROGRAMS\${APPNAME}$0"
-    Delete "$DESKTOP\${APPNAME}$0.lnk"
+    ; 删除快捷方式 - 直接使用架构后缀
+    !if "${ARCH}" == "x86"
+        Delete "$SMPROGRAMS\${APPNAME} (32位)\*.*"
+        RMDir "$SMPROGRAMS\${APPNAME} (32位)"
+        Delete "$DESKTOP\${APPNAME} (32位).lnk"
+    !else
+        Delete "$SMPROGRAMS\${APPNAME}\*.*"
+        RMDir "$SMPROGRAMS\${APPNAME}"
+        Delete "$DESKTOP\${APPNAME}.lnk"
+    !endif
     
     ; 删除注册表项
     DeleteRegKey HKLM "Software\${COMPANYNAME}\${APPNAME}"
     DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}"
-SectionEnd
-
-; 字符串替换函数
-Function StrRep
-  Exch $R1 ; $R1=substring to replace
-  Exch
-  Exch $R2 ; $R2=string to replace in
-  Push $R3 ; $R3=replacement string
-  Push $R4 ; $R4=counter
-  Push $R5 ; $R5=len(R1)
-  Push $R6 ; $R6=len(R3)
-  Push $R7 ; $R7=temp
-  StrCpy $R4 0
-  StrLen $R5 $R1
-  StrLen $R6 $R3
-  
-  loop:
-    StrCpy $R7 $R2 $R5 $R4
-    StrCmp $R7 $R1 found
-    StrCmp $R4 $R2 done
-    IntOp $R4 $R4 + 1
-    Goto loop
-  
-  found:
-    StrCpy $R7 $R2 $R4
-    IntOp $R8 $R4 + $R5
-    StrCpy $R9 $R2 "" $R8
-    StrCpy $R2 $R7$R3$R9
-    IntOp $R4 $R4 + $R6
-    Goto loop
-  
-  done:
-    Pop $R7
-    Pop $R6
-    Pop $R5
-    Pop $R4
-    Pop $R3
-    Push $R2
-    Exch
-    Pop $R1
-FunctionEnd 
+SectionEnd 
