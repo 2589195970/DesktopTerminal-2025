@@ -1,0 +1,59 @@
+name: Build Windows Installer (x86)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        submodules: recursive
+    
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v3
+      with:
+        version: '5.15.2'
+        host: 'windows'
+        target: 'desktop'
+        arch: 'win32_msvc2019'
+        modules: 'qtwebengine'
+    
+    - name: Setup MSVC
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x86
+    
+    - name: Configure CMake
+      run: |
+        mkdir build
+        cd build
+        cmake ../qt-shell -G "NMake Makefiles" -A Win32
+    
+    - name: Build application
+      run: |
+        cd build
+        nmake
+    
+    - name: Deploy Qt dependencies
+      run: |
+        mkdir deploy
+        copy build\qt-shell.exe deploy\
+        windeployqt --dir deploy --qmldir ../qt-shell deploy\qt-shell.exe
+    
+    - name: Create installer with NSIS
+      run: |
+        choco install nsis -y
+        makensis -DARCH=x86 installer.nsi
+    
+    - name: Upload installer
+      uses: actions/upload-artifact@v3
+      with:
+        name: windows-installer-x86
+        path: Output\qt-shell-setup-x86.exe 
