@@ -52,6 +52,14 @@ jobs:
         copy build\qt-shell.exe deploy\
         windeployqt --dir deploy --qmldir qt-shell deploy\qt-shell.exe
     
+    - name: Copy resources
+      shell: cmd
+      run: |
+        mkdir deploy\resources
+        copy resources\*.* deploy\resources\
+        echo Files in deploy directory:
+        dir deploy /s
+    
     - name: Create installer with NSIS
       shell: cmd
       run: |

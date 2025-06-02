@@ -18,6 +18,13 @@
 #include <QDir>
 #include <QDebug>
 
+#ifdef Q_OS_WIN
+#include <windows.h>
+#include <iostream>
+#include <io.h>
+#include <fcntl.h>
+#endif
+
 // 配置管理类
 class ConfigManager {
 public:
@@ -342,6 +349,22 @@ int main(int argc, char *argv[]) {
     
     // 设置全局应用程序编码
     QTextCodec::setCodecForLocale(QTextCodec::codecForName("UTF-8"));
+    
+#ifdef Q_OS_WIN
+    // Windows 平台特殊处理
+    #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+        // Qt5 需要设置更多编码
+        QTextCodec *codec = QTextCodec::codecForName("UTF-8");
+        QTextCodec::setCodecForLocale(codec);
+    #endif
+    // 设置 Windows 控制台编码
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+#endif
+    
+    // 设置应用程序属性
+    app.setApplicationName("DesktopTerminal");
+    app.setOrganizationName("智多分");
     
     // 输出当前工作目录，帮助调试
     qDebug("当前工作目录: %s", qPrintable(QDir::currentPath()));

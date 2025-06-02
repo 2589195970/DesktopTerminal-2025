@@ -6,6 +6,14 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_CXX_STANDARD 17)
 
+# Windows 平台特殊设置
+if(WIN32)
+    # 设置 Windows 应用程序属性（不显示控制台窗口）
+    set(CMAKE_WIN32_EXECUTABLE TRUE)
+    # 确保使用 UTF-8 编码
+    add_compile_options("/utf-8")
+endif()
+
 find_package(Qt5 COMPONENTS Widgets WebEngineWidgets REQUIRED)
 
 # 使用本地的 QHotkey 而不是 FetchContent
