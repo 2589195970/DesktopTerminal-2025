@@ -86,7 +86,7 @@ A: 使用 GitHub Secrets 存储证书：
   uses: softprops/action-gh-release@v1
   if: startsWith(github.ref, 'refs/tags/')
   with:
-    files: Output/qt-shell-setup.exe
+    files: Output/zdf-exam-desktop-setup.exe
     draft: false
     prerelease: false
 ```

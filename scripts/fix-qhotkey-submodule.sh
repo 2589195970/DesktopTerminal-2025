@@ -15,16 +15,16 @@ case $choice in
     1)
         echo "正在移除 QHotkey 的 Git 历史..."
         # 从暂存区移除
-        git rm --cached qt-shell/QHotkey 2>/dev/null || true
+        git rm --cached zdf-exam-desktop/QHotkey 2>/dev/null || true
         
         # 删除 .git 目录
-        if [ -d "qt-shell/QHotkey/.git" ]; then
-            rm -rf qt-shell/QHotkey/.git
+        if [ -d "zdf-exam-desktop/QHotkey/.git" ]; then
+            rm -rf zdf-exam-desktop/QHotkey/.git
             echo "✓ 已删除 QHotkey/.git 目录"
         fi
         
         # 重新添加为普通文件
-        git add qt-shell/QHotkey
+        git add zdf-exam-desktop/QHotkey
         echo "✓ QHotkey 已作为普通代码添加"
         echo ""
         echo "现在可以正常提交了："
@@ -34,21 +34,21 @@ case $choice in
     2)
         echo "正在添加 QHotkey 为 Git Submodule..."
         # 从暂存区移除
-        git rm --cached qt-shell/QHotkey 2>/dev/null || true
+        git rm --cached zdf-exam-desktop/QHotkey 2>/dev/null || true
         
         # 添加为 submodule
-        git submodule add https://github.com/Skycoder42/QHotkey.git qt-shell/QHotkey
+        git submodule add https://github.com/Skycoder42/QHotkey.git zdf-exam-desktop/QHotkey
         
         echo "✓ QHotkey 已添加为 submodule"
         echo ""
         echo "现在可以提交了："
-        echo "  git add .gitmodules qt-shell/QHotkey"
+        echo "  git add .gitmodules zdf-exam-desktop/QHotkey"
         echo "  git commit -m \"Add QHotkey as submodule\""
         ;;
         
     3)
         echo "从暂存区移除 QHotkey..."
-        git rm --cached qt-shell/QHotkey
+        git rm --cached zdf-exam-desktop/QHotkey
         echo "✓ 已从暂存区移除"
         echo ""
         echo "QHotkey 现在被 Git 忽略，但文件仍然存在"

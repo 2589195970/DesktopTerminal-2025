@@ -16,9 +16,23 @@ jobs:
       with:
         submodules: recursive
     
+    - name: Configure APT for Ubuntu 22.04
+      run: |
+        # 创建 APT 配置以忽略 qt5-default 包
+        echo 'Package: qt5-default' | sudo tee /etc/apt/preferences.d/ignore-qt5-default
+        echo 'Pin: release *' | sudo tee -a /etc/apt/preferences.d/ignore-qt5-default
+        echo 'Pin-Priority: -1' | sudo tee -a /etc/apt/preferences.d/ignore-qt5-default
+        
+        # 安装 qtchooser 并配置 Qt5
+        sudo apt-get update
+        sudo apt-get install -y qtchooser
+        sudo update-alternatives --install /usr/bin/qmake qmake /usr/lib/qt5/bin/qmake 100 || true
+    
     - name: Install dependencies
       run: |
         sudo apt-get update
+        # 设置 Qt5 环境变量，避免依赖 qt5-default
+        export QT_SELECT=qt5
         sudo apt-get install -y \
           build-essential \
           cmake \
@@ -53,7 +67,10 @@ jobs:
       run: |
         mkdir build
         cd build
-        cmake ../qt-shell -DCMAKE_BUILD_TYPE=Release
+        # 设置 Qt5 环境变量
+        export QT_SELECT=qt5
+        export Qt5_DIR=/usr/lib/x86_64-linux-gnu/cmake/Qt5
+        cmake ../qt-shell -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/usr/lib/x86_64-linux-gnu/cmake
     
     - name: Build application
       run: |
@@ -86,6 +103,20 @@ jobs:
         Categories=Education;Network;
         Terminal=false
         StartupNotify=true
+        EOF
+        
+        # 创建配置文件说明
+        cat > AppDir/README.md <<EOF
+        # 机考霸屏桌面端
+        
+        ## 配置说明
+        首次运行时，程序会在同目录下创建 config.json 配置文件。
+        您可以编辑此文件来修改：
+        - url: 指向的网址
+        - exitPassword: 退出密码
+        - appName: 应用名称
+        
+        修改后重新启动程序即可生效。
         EOF
         
         # 复制图标（暂时使用 simple_icon.ico，后续可以转换为 PNG）

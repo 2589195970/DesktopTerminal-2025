@@ -17,6 +17,7 @@
 #include <QJsonObject>
 #include <QDir>
 #include <QDebug>
+#include <QStandardPaths>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -37,23 +38,37 @@ public:
         // 尝试多种可能的路径
         QStringList possiblePaths;
         
-        // 1. 直接使用提供的路径
-        possiblePaths << configPath;
-        
-        // 2. 相对于应用程序目录
+        // 获取可执行文件路径
         QString exePath = QCoreApplication::applicationDirPath();
-        possiblePaths << exePath + "/" + configPath;
         
-        // 3. 相对于上一级目录（如果应用在build目录中）
+        // 1. 优先级最高：可执行文件同目录下的 config.json
+        possiblePaths << exePath + "/config.json";
+        
+        // 2. 用户配置目录（Windows: %APPDATA%/zdf-exam-desktop, Linux: ~/.config/zdf-exam-desktop, macOS: ~/Library/Application Support/zdf-exam-desktop）
+        QString userConfigPath = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+        if (!userConfigPath.isEmpty()) {
+            possiblePaths << userConfigPath + "/config.json";
+        }
+        
+        // 3. 系统配置目录（Linux/Unix）
+        #ifdef Q_OS_UNIX
+        possiblePaths << "/etc/zdf-exam-desktop/config.json";
+        #endif
+        
+        // 4. 内置资源目录（向后兼容）
+        possiblePaths << exePath + "/" + configPath;
         possiblePaths << exePath + "/../" + configPath;
         
-        // 4. 绝对路径尝试
+        // 5. 直接使用提供的路径
+        possiblePaths << configPath;
+        
+        // 6. 绝对路径尝试
         if (QDir::isAbsolutePath(configPath)) {
             possiblePaths << configPath;
         }
         
         // 输出所有尝试的路径
-        qDebug("尝试加载配置文件，可能的路径:");
+        qDebug("尝试加载配置文件，按优先级从高到低:");
         foreach (const QString &path, possiblePaths) {
             qDebug(" - %s %s", qPrintable(path), QFile::exists(path) ? "(存在)" : "(不存在)");
         }
@@ -86,13 +101,17 @@ public:
             // 检查必要的配置项是否存在
             if (!validateConfig()) {
                 qDebug("配置文件格式不正确，缺少必要的配置项");
-                return false;
+                continue;  // 继续尝试下一个文件而不是直接返回
             }
             
             qDebug("成功加载配置文件: %s", qPrintable(path));
-            qDebug("配置内容: URL=%s, 应用名称=%s", 
+            qDebug("配置内容: URL=%s, 应用名称=%s, 退出密码=%s", 
                    qPrintable(getUrl()), 
-                   qPrintable(getAppName()));
+                   qPrintable(getAppName()),
+                   qPrintable(QString("*").repeated(getExitPassword().length())));  // 密码用星号显示
+            
+            // 记录实际使用的配置文件路径
+            actualConfigPath = path;
             return true;
         }
         
@@ -122,7 +141,7 @@ public:
     }
     
     QString getAppName() const {
-        return config.value("appName").toString("机考霸屏桌面端");
+        return config.value("appName").toString("zdf-exam-desktop");
     }
     
     // 创建默认配置文件
@@ -165,6 +184,7 @@ private:
     }
     
     QJsonObject config;
+    QString actualConfigPath;
 };
 
 // 统一日志管理类
@@ -375,16 +395,28 @@ int main(int argc, char *argv[]) {
     if (!configManager.loadConfig()) {
         qDebug("配置文件加载失败，尝试创建默认配置文件");
         
-        // 尝试在应用程序目录下创建配置文件
-        QString defaultConfigPath = QCoreApplication::applicationDirPath() + "/resources/config.json";
+        // 优先在应用程序目录下创建 config.json（方便修改）
+        QString defaultConfigPath = QCoreApplication::applicationDirPath() + "/config.json";
         if (configManager.createDefaultConfig(defaultConfigPath) && configManager.loadConfig(defaultConfigPath)) {
-            qDebug("已创建并加载默认配置文件");
+            qDebug("已创建并加载默认配置文件: %s", qPrintable(defaultConfigPath));
+            QMessageBox::information(nullptr, "提示", 
+                QString("已创建默认配置文件:\n%1\n\n"
+                        "您可以编辑此文件来修改应用配置:\n"
+                        "- url: 指向的网址\n"
+                        "- exitPassword: 退出密码\n"
+                        "- appName: 应用名称").arg(defaultConfigPath));
         } else {
-            qDebug("无法创建或加载默认配置文件，程序将退出");
-            QMessageBox::critical(nullptr, "错误", 
-                "无法加载配置文件，程序将退出。\n"
-                "请确保resources/config.json文件存在且格式正确，或者程序有权限创建此文件。");
-            return 1;
+            // 如果无法在应用程序目录创建，尝试在 resources 子目录
+            defaultConfigPath = QCoreApplication::applicationDirPath() + "/resources/config.json";
+            if (configManager.createDefaultConfig(defaultConfigPath) && configManager.loadConfig(defaultConfigPath)) {
+                qDebug("已创建并加载默认配置文件: %s", qPrintable(defaultConfigPath));
+            } else {
+                qDebug("无法创建或加载默认配置文件，程序将退出");
+                QMessageBox::critical(nullptr, "错误", 
+                    "无法加载配置文件，程序将退出。\n"
+                    "请确保程序有权限在应用程序目录创建文件。");
+                return 1;
+            }
         }
     }
     

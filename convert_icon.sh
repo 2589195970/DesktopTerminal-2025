@@ -17,5 +17,5 @@ if ! command -v convert &> /dev/null; then
 fi
 
 # 转换图标
-convert resources/simple_icon.ico -resize 256x256 resources/qt-shell.png
-echo "图标已转换为 PNG 格式: resources/qt-shell.png" 
+convert resources/simple_icon.ico -resize 256x256 resources/zdf-exam-desktop.png
+echo "图标已转换为 PNG 格式: resources/zdf-exam-desktop.png" 

@@ -1,0 +1,49 @@
+Software License Agreement
+
+Desktop Terminal Software License Agreement
+
+1. Scope of Authorization
+This software is limited to educational examination scenarios only. Unauthorized use for other purposes is prohibited.
+
+2. Usage Restrictions
+(1) Decompiling, disassembling, or other attempts to obtain source code are prohibited
+(2) Modifying or deleting any copyright information in the software is prohibited
+(3) Using the software for any illegal purposes is prohibited
+
+3. Disclaimer
+This software is provided "as is" without any express or implied warranties, including but not limited to warranties of merchantability, fitness for a particular purpose, and non-infringement.
+
+4. Limitation of Liability
+Under no circumstances shall the software developers be liable for any direct, indirect, incidental, special, or consequential damages arising from the use of this software.
+
+5. Termination
+This agreement will automatically terminate if the user violates any terms of this agreement.
+
+6. Governing Law
+This agreement is governed by the laws of the People's Republic of China.
+
+---
+
+软件许可协议
+
+zdf-exam-desktop软件使用协议
+
+一、授权范围
+本软件仅限于教育考试场景使用，未经授权不得用于其他用途。
+
+二、使用限制
+1. 不得对软件进行反编译、反汇编或其他试图获取源代码的行为
+2. 不得修改或删除软件中的任何版权信息
+3. 不得将软件用于任何非法用途
+
+三、免责声明
+本软件按"现状"提供，不提供任何明示或暗示的保证，包括但不限于适销性、特定用途适用性和非侵权性的保证。
+
+四、责任限制
+在任何情况下，软件开发者均不对因使用本软件而导致的任何直接、间接、偶然、特殊或后果性损害承担责任。
+
+五、协议终止
+如果用户违反本协议的任何条款，本协议将自动终止。
+
+六、法律适用
+本协议受中华人民共和国法律管辖。 

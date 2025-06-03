@@ -66,7 +66,7 @@ xcopy /E /I /Y "%QT_DIR%\translations\qtwebengine_locales" "deploy\translations\
 ```bat
 :: 使用 Dependency Walker 检查依赖
 :: 或使用 windeployqt 的详细模式
-windeployqt --list mapping deploy\qt-shell.exe
+windeployqt --list mapping deploy\zdf-exam-desktop.exe
 ```
 
 #### 4. 权限问题
@@ -121,7 +121,7 @@ build-windows.bat
 mkdir build && cd build
 
 :: 2. 配置CMake
-cmake ..\qt-shell -G "NMake Makefiles" -DCMAKE_PREFIX_PATH="%QT_DIR%"
+cmake ..\zdf-exam-desktop -G "NMake Makefiles" -DCMAKE_PREFIX_PATH="%QT_DIR%"
 
 :: 3. 编译
 nmake
@@ -129,8 +129,8 @@ nmake
 :: 4. 部署依赖
 cd ..
 mkdir deploy
-copy build\qt-shell.exe deploy\
-windeployqt --dir deploy --release deploy\qt-shell.exe
+copy build\zdf-exam-desktop.exe deploy\
+windeployqt --dir deploy --release deploy\zdf-exam-desktop.exe
 
 :: 5. 创建安装包
 makensis installer.nsi
@@ -139,7 +139,7 @@ makensis installer.nsi
 ### 部署检查清单
 
 #### 必需文件
-- [x] qt-shell.exe（主程序）
+- [x] zdf-exam-desktop.exe（主程序）
 - [x] Qt5Core.dll, Qt5Gui.dll, Qt5Widgets.dll
 - [x] Qt5WebEngine.dll, Qt5WebEngineCore.dll
 - [x] Qt5WebEngineWidgets.dll
@@ -179,7 +179,7 @@ makensis installer.nsi
 ### 问题：找不到Qt5Core.dll
 ```bat
 :: 检查部署
-windeployqt --list missing deploy\qt-shell.exe
+windeployqt --list missing deploy\zdf-exam-desktop.exe
 
 :: 手动复制
 copy "%QT_DIR%\bin\Qt5Core.dll" deploy\

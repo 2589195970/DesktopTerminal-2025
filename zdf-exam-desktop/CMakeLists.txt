@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(qt-shell)
+project(zdf-exam-desktop)
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
@@ -19,5 +19,5 @@ find_package(Qt5 COMPONENTS Widgets WebEngineWidgets REQUIRED)
 # 使用本地的 QHotkey 而不是 FetchContent
 add_subdirectory(QHotkey)
 
-add_executable(qt-shell main.cpp)
-target_link_libraries(qt-shell PRIVATE Qt5::Widgets Qt5::WebEngineWidgets QHotkey::QHotkey) 
+add_executable(zdf-exam-desktop main.cpp)
+target_link_libraries(zdf-exam-desktop PRIVATE Qt5::Widgets Qt5::WebEngineWidgets QHotkey::QHotkey) 

@@ -6,8 +6,8 @@ alwaysApply: true
 # DMC 配置文件 - 项目操作与开发规则
 
 [meta]
-project = 机考霸屏桌面端
-type = qt-shell
+project = zdf-exam-desktop
+type = zdf-exam-desktop
 version = 0.1.0
 
 [rules]
@@ -25,12 +25,12 @@ version = 0.1.0
 - 推荐使用 Qt5.12+ 或 Qt6，需包含 QtWebEngine
 - 使用 CMake 进行跨平台构建
 - 构建命令：
-    cd qt-shell
+    cd zdf-exam-desktop
     mkdir build && cd build
     cmake ..
     make
 
 [distribute]
 # 分发说明
-- 打包时需包含 qt-shell 可执行文件及 Qt 依赖库
+- 打包时需包含 zdf-exam-desktop 可执行文件及 Qt 依赖库
 - 可用 windeployqt/macdeployqt/linuxdeployqt 工具辅助分发
