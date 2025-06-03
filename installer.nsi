@@ -18,18 +18,16 @@ Unicode true
 !if "${ARCH}" == "x86"
   !define INSTALL_DIR "$PROGRAMFILES32\${COMPANYNAME}\${APPNAME}"
   !define OUTPUT_FILE "Output\zdf-exam-desktop-setup-x86.exe"
-  !define ARCH_SUFFIX " (32位)"
 !else
   !define INSTALL_DIR "$PROGRAMFILES64\${COMPANYNAME}\${APPNAME}"
   !define OUTPUT_FILE "Output\zdf-exam-desktop-setup.exe"
-  !define ARCH_SUFFIX ""
 !endif
 
 ; 引入现代UI
 !include "MUI2.nsh"
 
 ; 安装程序基本设置
-Name "${APPNAME}${ARCH_SUFFIX}"
+Name "${APPNAME}"
 OutFile "${OUTPUT_FILE}"
 InstallDir "${INSTALL_DIR}"
 InstallDirRegKey HKLM "Software\${COMPANYNAME}\${APPNAME}" "InstallDir"
@@ -74,7 +72,7 @@ Section "主程序" SecMain
     
     ; 写注册表
     WriteRegStr HKLM "Software\${COMPANYNAME}\${APPNAME}" "InstallDir" "$INSTDIR"
-    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "DisplayName" "${APPNAME}${ARCH_SUFFIX}"
+    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "DisplayName" "${APPNAME}"
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "UninstallString" "$INSTDIR\uninstall.exe"
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "DisplayIcon" "$INSTDIR\zdf-exam-desktop.exe,0"
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "Publisher" "${COMPANYNAME}"
@@ -86,12 +84,12 @@ Section "主程序" SecMain
     WriteUninstaller "$INSTDIR\uninstall.exe"
     
     ; 创建开始菜单快捷方式
-    CreateDirectory "$SMPROGRAMS\${APPNAME}${ARCH_SUFFIX}"
-    CreateShortcut "$SMPROGRAMS\${APPNAME}${ARCH_SUFFIX}\${APPNAME}${ARCH_SUFFIX}.lnk" "$INSTDIR\zdf-exam-desktop.exe" "" "$INSTDIR\resources\simple_icon.ico" 0
-    CreateShortcut "$SMPROGRAMS\${APPNAME}${ARCH_SUFFIX}\卸载.lnk" "$INSTDIR\uninstall.exe" "" "$INSTDIR\resources\simple_icon.ico" 0
+    CreateDirectory "$SMPROGRAMS\${APPNAME}"
+    CreateShortcut "$SMPROGRAMS\${APPNAME}\${APPNAME}.lnk" "$INSTDIR\zdf-exam-desktop.exe" "" "$INSTDIR\resources\simple_icon.ico" 0
+    CreateShortcut "$SMPROGRAMS\${APPNAME}\卸载.lnk" "$INSTDIR\uninstall.exe" "" "$INSTDIR\resources\simple_icon.ico" 0
     
     ; 创建桌面快捷方式
-    CreateShortcut "$DESKTOP\${APPNAME}${ARCH_SUFFIX}.lnk" "$INSTDIR\zdf-exam-desktop.exe" "" "$INSTDIR\resources\simple_icon.ico" 0
+    CreateShortcut "$DESKTOP\${APPNAME}.lnk" "$INSTDIR\zdf-exam-desktop.exe" "" "$INSTDIR\resources\simple_icon.ico" 0
     
     ; 显示安装完成消息
     MessageBox MB_OK "安装完成！桌面快捷方式已创建。"
@@ -103,16 +101,10 @@ Section "Uninstall"
     Delete "$INSTDIR\*.*"
     RMDir /r "$INSTDIR"
     
-    ; 删除快捷方式 - 直接使用架构后缀
-    !if "${ARCH}" == "x86"
-        Delete "$SMPROGRAMS\${APPNAME} (32位)\*.*"
-        RMDir "$SMPROGRAMS\${APPNAME} (32位)"
-        Delete "$DESKTOP\${APPNAME} (32位).lnk"
-    !else
-        Delete "$SMPROGRAMS\${APPNAME}\*.*"
-        RMDir "$SMPROGRAMS\${APPNAME}"
-        Delete "$DESKTOP\${APPNAME}.lnk"
-    !endif
+    ; 删除快捷方式
+    Delete "$SMPROGRAMS\${APPNAME}\*.*"
+    RMDir "$SMPROGRAMS\${APPNAME}"
+    Delete "$DESKTOP\${APPNAME}.lnk"
     
     ; 删除注册表项
     DeleteRegKey HKLM "Software\${COMPANYNAME}\${APPNAME}"

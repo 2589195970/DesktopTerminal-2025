@@ -62,7 +62,7 @@ jobs:
       run: |
         mkdir build-arm64
         cd build-arm64
-        cmake ../qt-shell \
+        cmake ../zdf-exam-desktop \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
           -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
@@ -80,26 +80,26 @@ jobs:
     
     - name: Create tarball package
       run: |
-        mkdir -p package-arm64/qt-shell
-        mkdir -p package-arm64/qt-shell/resources
+        mkdir -p package-arm64/zdf-exam-desktop
+        mkdir -p package-arm64/zdf-exam-desktop/resources
         
         # 复制可执行文件和资源
-        cp build-arm64/qt-shell package-arm64/qt-shell/ || cp qt-shell/qt-shell package-arm64/qt-shell/ || echo "Binary copy failed"
-        cp -r resources/* package-arm64/qt-shell/resources/
+        cp build-arm64/zdf-exam-desktop package-arm64/zdf-exam-desktop/ || cp zdf-exam-desktop/zdf-exam-desktop package-arm64/zdf-exam-desktop/ || echo "Binary copy failed"
+        cp -r resources/* package-arm64/zdf-exam-desktop/resources/
         
         # 创建启动脚本
-        cat > package-arm64/qt-shell/run.sh <<'EOF'
+        cat > package-arm64/zdf-exam-desktop/run.sh <<'EOF'
         #!/bin/bash
         SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
         cd "$SCRIPT_DIR"
         export LD_LIBRARY_PATH="$SCRIPT_DIR/lib:$LD_LIBRARY_PATH"
-        ./qt-shell "$@"
+        ./zdf-exam-desktop "$@"
         EOF
-        chmod +x package-arm64/qt-shell/run.sh
+        chmod +x package-arm64/zdf-exam-desktop/run.sh
         
         # 创建 README
-        cat > package-arm64/qt-shell/README.md <<'EOF'
-        # 机考霸屏桌面端 - Kylin ARM64 版本
+        cat > package-arm64/zdf-exam-desktop/README.md <<'EOF'
+        # zdf-exam-desktop - Kylin ARM64 版本
         
         ## 运行说明
         1. 解压此文件
@@ -118,10 +118,10 @@ jobs:
         
         # 打包
         cd package-arm64
-        tar -czf ../qt-shell-kylin-arm64.tar.gz qt-shell/
+        tar -czf ../zdf-exam-desktop-kylin-arm64.tar.gz zdf-exam-desktop/
     
     - name: Upload package
       uses: actions/upload-artifact@v4
       with:
         name: kylin-arm64-package
-        path: qt-shell-kylin-arm64.tar.gz 
+        path: zdf-exam-desktop-kylin-arm64.tar.gz 

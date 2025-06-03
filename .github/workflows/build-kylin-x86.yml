@@ -70,7 +70,7 @@ jobs:
         # 设置 Qt5 环境变量
         export QT_SELECT=qt5
         export Qt5_DIR=/usr/lib/x86_64-linux-gnu/cmake/Qt5
-        cmake ../qt-shell -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/usr/lib/x86_64-linux-gnu/cmake
+        cmake ../zdf-exam-desktop -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/usr/lib/x86_64-linux-gnu/cmake
     
     - name: Build application
       run: |
@@ -85,21 +85,21 @@ jobs:
         mkdir -p AppDir/resources
         
         # 复制可执行文件
-        cp build/qt-shell AppDir/usr/bin/
+        cp build/zdf-exam-desktop AppDir/usr/bin/
         
         # 复制资源文件
         cp -r resources/* AppDir/resources/
         
         # 创建桌面文件
-        cat > AppDir/usr/share/applications/qt-shell.desktop <<EOF
+        cat > AppDir/usr/share/applications/zdf-exam-desktop.desktop <<EOF
         [Desktop Entry]
         Type=Application
-        Name=机考霸屏桌面端
-        Name[zh_CN]=机考霸屏桌面端
+        Name=zdf-exam-desktop
+        Name[zh_CN]=zdf-exam-desktop
         Comment=教育考试场景专用安全浏览器
         Comment[zh_CN]=教育考试场景专用安全浏览器
-        Exec=qt-shell
-        Icon=qt-shell
+        Exec=zdf-exam-desktop
+        Icon=zdf-exam-desktop
         Categories=Education;Network;
         Terminal=false
         StartupNotify=true
@@ -107,7 +107,7 @@ jobs:
         
         # 创建配置文件说明
         cat > AppDir/README.md <<EOF
-        # 机考霸屏桌面端
+        # zdf-exam-desktop
         
         ## 配置说明
         首次运行时，程序会在同目录下创建 config.json 配置文件。
@@ -120,7 +120,7 @@ jobs:
         EOF
         
         # 复制图标（暂时使用 simple_icon.ico，后续可以转换为 PNG）
-        cp resources/simple_icon.ico AppDir/usr/share/icons/hicolor/256x256/apps/qt-shell.ico
+        cp resources/simple_icon.ico AppDir/usr/share/icons/hicolor/256x256/apps/zdf-exam-desktop.ico
     
     - name: Download linuxdeployqt
       run: |
@@ -136,10 +136,10 @@ jobs:
         ./linuxdeployqt-continuous-x86_64.AppImage AppDir/usr/share/applications/*.desktop -appimage -no-translations -qmake=/usr/lib/qt5/bin/qmake
         
         # 重命名输出文件
-        mv *.AppImage qt-shell-kylin-x86_64.AppImage
+        mv *.AppImage zdf-exam-desktop-kylin-x86_64.AppImage
     
     - name: Upload AppImage
       uses: actions/upload-artifact@v4
       with:
         name: kylin-x86_64-appimage
-        path: qt-shell-kylin-x86_64.AppImage 
+        path: zdf-exam-desktop-kylin-x86_64.AppImage 

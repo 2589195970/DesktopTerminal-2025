@@ -39,7 +39,7 @@ sudo apt install qtbase5-dev qtwebengine5-dev cmake build-essential
 
 ### 3. 构建与运行
 ```bash
-cd qt-shell
+cd zdf-exam-desktop
 mkdir build && cd build
 cmake ..
 cmake --build .
@@ -64,13 +64,13 @@ cmake --build .
 
 3. 打开命令提示符或 PowerShell，进入项目目录，运行打包脚本：
    ```
-   cd qt-shell
+   cd zdf-exam-desktop
    .\build-windows.bat
    ```
 
-4. 脚本会自动构建 32 位和 64 位版本（如果您的 Qt 安装包含两种架构），并生成对应的安装包：
-   - `机考霸屏桌面端-1.0.0-x64-setup.exe` (64位)
-   - `机考霸屏桌面端-1.0.0-x86-setup.exe` (32位)
+4. 脚本会根据系统环境生成安装包：
+   - `zdf-exam-desktop-setup.exe` (64位系统)
+   - `zdf-exam-desktop-setup-x86.exe` (适用于32位系统)
 
 ## 安装包说明
 
@@ -81,5 +81,5 @@ cmake --build .
 3. 创建开始菜单和桌面快捷方式
 4. 提供标准的卸载功能
 5. 安装路径：
-   - 64位：`C:\Program Files\机考霸屏桌面端`
-   - 32位：`C:\Program Files (x86)\机考霸屏桌面端` 
+   - `C:\Program Files\zdf-exam-desktop` (64位系统)
+   - `C:\Program Files (x86)\zdf-exam-desktop` (32位系统) 

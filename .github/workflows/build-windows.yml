@@ -1,4 +1,4 @@
-name: Build Windows Installer (x86)
+name: Build Windows Installer
 
 on:
   push:
@@ -37,7 +37,7 @@ jobs:
       run: |
         mkdir build
         cd build
-        cmake ../qt-shell -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release
+        cmake ../zdf-exam-desktop -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release
     
     - name: Build application
       shell: cmd
@@ -49,8 +49,8 @@ jobs:
       shell: cmd
       run: |
         mkdir deploy
-        copy build\qt-shell.exe deploy\
-        windeployqt --dir deploy --qmldir qt-shell deploy\qt-shell.exe
+        copy build\zdf-exam-desktop.exe deploy\
+        windeployqt --dir deploy --qmldir zdf-exam-desktop deploy\zdf-exam-desktop.exe
     
     - name: Copy resources
       shell: cmd
@@ -74,5 +74,5 @@ jobs:
     - name: Upload installer
       uses: actions/upload-artifact@v4
       with:
-        name: windows-installer-x86
-        path: Output\qt-shell-setup-x86.exe 
+        name: windows-installer
+        path: Output\zdf-exam-desktop-setup-x86.exe 
