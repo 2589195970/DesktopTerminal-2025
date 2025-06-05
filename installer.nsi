@@ -1,6 +1,10 @@
 ﻿; NSIS 安装脚本（请以 UTF-8 无 BOM 保存）
 Unicode true
 
+; 包含必要的头文件
+!include "MUI2.nsh"
+!include "LogicLib.nsh"
+
 ; ─────────────────────────────────────────────
 ; 常量定义
 ; ─────────────────────────────────────────────
@@ -42,7 +46,6 @@ InstallDirRegKey HKLM "Software\${COMPANYNAME}\${APPNAME}" "InstallDir"
 RequestExecutionLevel admin
 
 ; MUI2
-!include "MUI2.nsh"
 !define MUI_ICON    "resources\logo.ico"
 !define MUI_UNICON  "resources\logo.ico"
 
