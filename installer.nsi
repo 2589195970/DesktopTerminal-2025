@@ -29,14 +29,6 @@ Unicode true
 !endif
 
 ; ─────────────────────────────────────────────
-; 语言字符串
-; ─────────────────────────────────────────────
-!insertmacro MUI_LANGUAGE "SimpChinese"
-
-LangString MSG_InstallDone ${LANG_SIMPCHINESE} "安装完成！桌面快捷方式已创建。"
-LangString MSG_UninstallDone ${LANG_SIMPCHINESE} "卸载完成，相关文件已全部移除。"
-
-; ─────────────────────────────────────────────
 ; 界面与全局设置
 ; ─────────────────────────────────────────────
 Name "${APPNAME}"
@@ -55,6 +47,13 @@ RequestExecutionLevel admin
 !insertmacro MUI_PAGE_FINISH
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
+
+; 必须在页面设置之后添加语言设置
+!insertmacro MUI_LANGUAGE "SimpChinese"
+
+; 语言字符串定义
+LangString MSG_InstallDone ${LANG_SIMPCHINESE} "安装完成！桌面快捷方式已创建。"
+LangString MSG_UninstallDone ${LANG_SIMPCHINESE} "卸载完成，相关文件已全部移除。"
 
 ; ─────────────────────────────────────────────
 ; 安装部分
