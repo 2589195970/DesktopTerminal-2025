@@ -1,112 +1,114 @@
-﻿; NSIS 安装脚本
-; 使用 Unicode 版本
+﻿; NSIS 安装脚本（请以 UTF-8 无 BOM 保存）
 Unicode true
 
-!define APPNAME "zdf-exam-desktop"
-!define COMPANYNAME "智多分"
-!define DESCRIPTION "教育考试场景专用安全浏览器"
-!define VERSIONMAJOR 1
-!define VERSIONMINOR 0
-!define VERSIONPATCH 0
+; ─────────────────────────────────────────────
+; 常量定义
+; ─────────────────────────────────────────────
+!define APPNAME        "zdf-exam-desktop"
+!define COMPANYNAME    "智多分"
+!define DESCRIPTION    "教育考试场景专用安全浏览器"
+!define VERSIONMAJOR   1
+!define VERSIONMINOR   0
+!define VERSIONPATCH   0
 
-; 架构设置 - 默认为x64，可通过命令行参数 -DARCH=x86 覆盖
+; 架构：默认为 x64，可在命令行 -DARCH=x86 覆盖
 !ifndef ARCH
   !define ARCH "x64"
 !endif
 
-; 根据架构设置安装路径和输出文件名
 !if "${ARCH}" == "x86"
   !define INSTALL_DIR "$PROGRAMFILES32\${COMPANYNAME}\${APPNAME}"
-  !define OUTPUT_FILE "Output\zdf-exam-desktop-setup-x86.exe"
+  !define OUTPUT_FILE "Output\${APPNAME}-setup-x86.exe"
 !else
   !define INSTALL_DIR "$PROGRAMFILES64\${COMPANYNAME}\${APPNAME}"
-  !define OUTPUT_FILE "Output\zdf-exam-desktop-setup.exe"
+  !define OUTPUT_FILE "Output\${APPNAME}-setup.exe"
 !endif
 
-; 引入现代UI
-!include "MUI2.nsh"
+; ─────────────────────────────────────────────
+; 语言字符串
+; ─────────────────────────────────────────────
+!insertmacro MUI_LANGUAGE "SimpChinese"
 
-; 安装程序基本设置
+LangString MSG_InstallDone ${LANG_SIMPCHINESE} "安装完成！桌面快捷方式已创建。"
+LangString MSG_UninstallDone ${LANG_SIMPCHINESE} "卸载完成，相关文件已全部移除。"
+
+; ─────────────────────────────────────────────
+; 界面与全局设置
+; ─────────────────────────────────────────────
 Name "${APPNAME}"
 OutFile "${OUTPUT_FILE}"
 InstallDir "${INSTALL_DIR}"
 InstallDirRegKey HKLM "Software\${COMPANYNAME}\${APPNAME}" "InstallDir"
 RequestExecutionLevel admin
 
-; 界面设置
-!define MUI_ICON "resources\simple_icon.ico"
-!define MUI_UNICON "resources\simple_icon.ico"
-; 暂时不使用 installer-banner.bmp，因为可能有格式问题
-; !define MUI_WELCOMEFINISHPAGE_BITMAP "resources\installer-banner.bmp"
+; MUI2
+!include "MUI2.nsh"
+!define MUI_ICON    "resources\simple_icon.ico"
+!define MUI_UNICON  "resources\simple_icon.ico"
 
-; 页面定义 - 不包含许可协议页面
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
-
-; 卸载页面
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 
-; 语言设置
-!insertmacro MUI_LANGUAGE "SimpChinese"
-
+; ─────────────────────────────────────────────
 ; 安装部分
+; ─────────────────────────────────────────────
 Section "主程序" SecMain
     SetOutPath "$INSTDIR"
-    
-    ; 复制主程序和依赖
+
+    ; 拷贝应用及依赖
     File /r "deploy\*.*"
-    
-    ; 复制配置文件和图标
+
+    ; 资源目录
     CreateDirectory "$INSTDIR\resources"
-    
-    ; 只在配置文件不存在时才复制默认配置
+    ; config.json：仅首次安装时复制
     IfFileExists "$INSTDIR\config.json" +2
         File /oname=config.json "resources\config.json"
-    
-    ; 始终复制资源文件夹中的配置（作为备份/参考）
+    ; 始终复制一份默认配置作为备份
     File /oname=resources\config.json.default "resources\config.json"
-    File /oname=resources\simple_icon.ico "resources\simple_icon.ico"
-    
-    ; 写注册表
+    File /oname=resources\simple_icon.ico      "resources\simple_icon.ico"
+
+    ; 注册表写入
     WriteRegStr HKLM "Software\${COMPANYNAME}\${APPNAME}" "InstallDir" "$INSTDIR"
-    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "DisplayName" "${APPNAME}"
-    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "UninstallString" "$INSTDIR\uninstall.exe"
-    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "DisplayIcon" "$INSTDIR\zdf-exam-desktop.exe,0"
-    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "Publisher" "${COMPANYNAME}"
-    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "DisplayVersion" "${VERSIONMAJOR}.${VERSIONMINOR}.${VERSIONPATCH}"
+    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "DisplayName"       "${APPNAME}"
+    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "DisplayVersion"    "${VERSIONMAJOR}.${VERSIONMINOR}.${VERSIONPATCH}"
+    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "Publisher"         "${COMPANYNAME}"
+    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "DisplayIcon"       "$INSTDIR\zdf-exam-desktop.exe,0"
+    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "UninstallString"   "$INSTDIR\uninstall.exe"
     WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "NoModify" 1
     WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "NoRepair" 1
-    
-    ; 创建卸载程序
+
+    ; 卸载器
     WriteUninstaller "$INSTDIR\uninstall.exe"
-    
-    ; 创建开始菜单快捷方式
+
+    ; 开始菜单
     CreateDirectory "$SMPROGRAMS\${APPNAME}"
     CreateShortcut "$SMPROGRAMS\${APPNAME}\${APPNAME}.lnk" "$INSTDIR\zdf-exam-desktop.exe" "" "$INSTDIR\resources\simple_icon.ico" 0
-    CreateShortcut "$SMPROGRAMS\${APPNAME}\卸载.lnk" "$INSTDIR\uninstall.exe" "" "$INSTDIR\resources\simple_icon.ico" 0
-    
-    ; 创建桌面快捷方式
+    CreateShortcut "$SMPROGRAMS\${APPNAME}\卸载.lnk"      "$INSTDIR\uninstall.exe"        "" "$INSTDIR\resources\simple_icon.ico" 0
+
+    ; 桌面快捷方式
     CreateShortcut "$DESKTOP\${APPNAME}.lnk" "$INSTDIR\zdf-exam-desktop.exe" "" "$INSTDIR\resources\simple_icon.ico" 0
-    
-    ; 显示安装完成消息
-    MessageBox MB_OK "安装完成！桌面快捷方式已创建。"
+
+    MessageBox MB_OK "$(MSG_InstallDone)"
 SectionEnd
 
+; ─────────────────────────────────────────────
 ; 卸载部分
+; ─────────────────────────────────────────────
 Section "Uninstall"
-    ; 删除文件
-    Delete "$INSTDIR\*.*"
+    ; 删除文件与目录
     RMDir /r "$INSTDIR"
-    
+
     ; 删除快捷方式
-    Delete "$SMPROGRAMS\${APPNAME}\*.*"
-    RMDir "$SMPROGRAMS\${APPNAME}"
+    RMDir /r "$SMPROGRAMS\${APPNAME}"
     Delete "$DESKTOP\${APPNAME}.lnk"
-    
-    ; 删除注册表项
+
+    ; 删除注册表
     DeleteRegKey HKLM "Software\${COMPANYNAME}\${APPNAME}"
     DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}"
-SectionEnd 
+
+    MessageBox MB_OK "$(MSG_UninstallDone)"
+SectionEnd
