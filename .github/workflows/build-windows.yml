@@ -55,9 +55,22 @@ jobs:
     - name: Copy resources
       shell: cmd
       run: |
+        echo "正在复制资源文件..."
         mkdir deploy\resources
+        echo "检查logo.ico是否存在："
+        if exist resources\logo.ico (echo "logo.ico存在") else (echo "ERROR: logo.ico不存在!")
         copy resources\*.* deploy\resources\
-        echo Files in deploy directory:
+        
+        echo "验证资源文件复制结果："
+        if exist deploy\resources\logo.ico (echo "logo.ico已成功复制") else (echo "ERROR: logo.ico复制失败!")
+        
+        echo "资源目录内容："
+        dir resources /b
+        
+        echo "部署资源目录内容："
+        dir deploy\resources /b
+        
+        echo "完整部署目录结构："
         dir deploy /s
     
     - name: Create installer with NSIS
@@ -65,11 +78,16 @@ jobs:
       run: |
         choco install nsis -y
         cd %GITHUB_WORKSPACE%
-        dir resources
+        echo "NSIS安装脚本中的图标引用："
+        findstr "MUI_ICON\|CreateShortcut" installer.nsi
+        
         mkdir Output
         echo === Checking installer.nsi content ===
         findstr /n "StrRep" installer.nsi || echo No StrRep found
         makensis -DARCH=x86 installer.nsi
+        
+        echo "生成的安装包："
+        dir Output
     
     - name: Upload installer
       uses: actions/upload-artifact@v4

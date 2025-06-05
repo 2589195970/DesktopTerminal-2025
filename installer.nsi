@@ -43,8 +43,8 @@ RequestExecutionLevel admin
 
 ; MUI2
 !include "MUI2.nsh"
-!define MUI_ICON    "resources\simple_icon.ico"
-!define MUI_UNICON  "resources\simple_icon.ico"
+!define MUI_ICON    "resources\logo.ico"
+!define MUI_UNICON  "resources\logo.ico"
 
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
@@ -69,7 +69,7 @@ Section "主程序" SecMain
         File /oname=config.json "resources\config.json"
     ; 始终复制一份默认配置作为备份
     File /oname=resources\config.json.default "resources\config.json"
-    File /oname=resources\simple_icon.ico      "resources\simple_icon.ico"
+    File /oname=resources\logo.ico      "resources\logo.ico"
 
     ; 注册表写入
     WriteRegStr HKLM "Software\${COMPANYNAME}\${APPNAME}" "InstallDir" "$INSTDIR"
@@ -86,11 +86,11 @@ Section "主程序" SecMain
 
     ; 开始菜单
     CreateDirectory "$SMPROGRAMS\${APPNAME}"
-    CreateShortcut "$SMPROGRAMS\${APPNAME}\${APPNAME}.lnk" "$INSTDIR\zdf-exam-desktop.exe" "" "$INSTDIR\resources\simple_icon.ico" 0
-    CreateShortcut "$SMPROGRAMS\${APPNAME}\卸载.lnk"      "$INSTDIR\uninstall.exe"        "" "$INSTDIR\resources\simple_icon.ico" 0
+    CreateShortcut "$SMPROGRAMS\${APPNAME}\${APPNAME}.lnk" "$INSTDIR\zdf-exam-desktop.exe" "" "$INSTDIR\resources\logo.ico" 0
+    CreateShortcut "$SMPROGRAMS\${APPNAME}\卸载.lnk"      "$INSTDIR\uninstall.exe"        "" "$INSTDIR\resources\logo.ico" 0
 
     ; 桌面快捷方式
-    CreateShortcut "$DESKTOP\${APPNAME}.lnk" "$INSTDIR\zdf-exam-desktop.exe" "" "$INSTDIR\resources\simple_icon.ico" 0
+    CreateShortcut "$DESKTOP\${APPNAME}.lnk" "$INSTDIR\zdf-exam-desktop.exe" "" "$INSTDIR\resources\logo.ico" 0
 
     MessageBox MB_OK "$(MSG_InstallDone)"
 SectionEnd
