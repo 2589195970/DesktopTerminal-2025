@@ -23,6 +23,7 @@
 #include <QStandardPaths>
 #include <QWindowStateChangeEvent>
 #include <QShortcut>
+#include <QSysInfo>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -30,6 +31,25 @@
 #include <io.h>
 #include <fcntl.h>
 #endif
+
+// 日志级别定义
+enum LogLevel {
+    L_DEBUG,
+    L_INFO,
+    L_WARNING,
+    L_ERROR
+};
+
+// 日志条目结构
+struct LogEntry {
+    QDateTime timestamp;
+    QString category;
+    QString message;
+    QString filename;
+};
+
+// 前置声明
+class QTimer;
 
 // 配置管理类
 class ConfigManager {
@@ -202,59 +222,8 @@ private:
     QString actualConfigPath;
 };
 
-// 前向声明
-class QTimer;
-
-// 日志级别枚举
-enum LogLevel {
-    DEBUG,
-    INFO,
-    WARNING,
-    ERROR
-};
-
-// 日志条目结构
-struct LogEntry {
-    QDateTime timestamp;
-    QString category;
-    QString message;
-    QString filename;
-};
-
-// 简化的日志管理类，避免使用QObject和信号槽
+// 日志管理类
 class Logger {
-private:
-    // 私有构造函数，防止外部实例化
-    Logger() : m_logLevel(INFO) {
-        // 初始化时设置应用程序默认编码
-        QTextCodec::setCodecForLocale(QTextCodec::codecForName("UTF-8"));
-        
-        // 启动定时刷新定时器
-        m_flushTimer = new QTimer();
-        QObject::connect(m_flushTimer, &QTimer::timeout, [this]() {
-            this->flushAllLogBuffers();
-        });
-        m_flushTimer->start(5000); // 每5秒刷新一次日志
-    }
-    
-    // 禁止拷贝和赋值
-    Logger(const Logger&) = delete;
-    Logger& operator=(const Logger&) = delete;
-    
-    ~Logger() {
-        flushAllLogBuffers();
-        if (m_flushTimer) {
-            m_flushTimer->stop();
-            delete m_flushTimer;
-        }
-    }
-    
-    // 成员变量
-    static const int LOG_BUFFER_SIZE = 10; // 缓冲区大小
-    QMap<QString, QList<LogEntry>> m_logBuffer; // 按文件名分组的日志缓冲区
-    LogLevel m_logLevel; // 日志级别
-    QTimer* m_flushTimer; // 定时刷新定时器
-    
 public:
     // 单例访问点
     static Logger& instance() {
@@ -286,7 +255,7 @@ public:
     }
     
     // 记录应用程序事件到指定日志文件
-    void logEvent(const QString &category, const QString &message, const QString &filename = "app.log", LogLevel level = INFO) {
+    void logEvent(const QString &category, const QString &message, const QString &filename = "app.log", LogLevel level = L_INFO) {
         // 检查日志级别
         if (level < m_logLevel) {
             return;
@@ -302,7 +271,7 @@ public:
         m_logBuffer[filename].append(entry);
         
         // 如果缓冲区达到一定大小或者重要日志，立即刷新
-        if (m_logBuffer[filename].size() >= LOG_BUFFER_SIZE || level >= WARNING) {
+        if (m_logBuffer[filename].size() >= LOG_BUFFER_SIZE || level >= L_WARNING) {
             flushLogBuffer(filename);
         }
     }
@@ -347,25 +316,25 @@ public:
     }
     
     // 应用程序事件
-    void appEvent(const QString &event, LogLevel level = INFO) {
+    void appEvent(const QString &event, LogLevel level = L_INFO) {
         logEvent("应用程序", event, "app.log", level);
     }
     
     // 配置加载事件
-    void configEvent(const QString &event, LogLevel level = INFO) {
+    void configEvent(const QString &event, LogLevel level = L_INFO) {
         logEvent("配置文件", event, "config.log", level);
     }
     
     // 记录启动信息，包括配置文件位置
     void logStartup(const QString &configPath) {
         QString message = QString("程序启动成功，使用配置文件: %1").arg(configPath);
-        logEvent("启动", message, "startup.log", INFO);
+        logEvent("启动", message, "startup.log", L_INFO);
         qDebug("%s", qPrintable(message));
     }
     
     // 热键事件
     void hotkeyEvent(const QString &result) {
-        logEvent("热键退出尝试", result, "exit.log", INFO);
+        logEvent("热键退出尝试", result, "exit.log", L_INFO);
     }
     
     // 显示消息框（确保UI文本也使用正确编码）
@@ -385,8 +354,41 @@ public:
         flushAllLogBuffers();
         if (m_flushTimer) {
             m_flushTimer->stop();
+            delete m_flushTimer;
         }
     }
+    
+private:
+    // 私有构造函数，防止外部实例化
+    Logger() : m_logLevel(L_INFO) {
+        // 初始化时设置应用程序默认编码
+        QTextCodec::setCodecForLocale(QTextCodec::codecForName("UTF-8"));
+        
+        // 启动定时刷新定时器
+        m_flushTimer = new QTimer();
+        QObject::connect(m_flushTimer, &QTimer::timeout, [this]() {
+            this->flushAllLogBuffers();
+        });
+        m_flushTimer->start(5000); // 每5秒刷新一次日志
+    }
+    
+    // 禁止拷贝和赋值
+    Logger(const Logger&) = delete;
+    Logger& operator=(const Logger&) = delete;
+    
+    ~Logger() {
+        flushAllLogBuffers();
+        if (m_flushTimer) {
+            m_flushTimer->stop();
+            delete m_flushTimer;
+        }
+    }
+    
+    // 成员变量
+    static const int LOG_BUFFER_SIZE = 10; // 缓冲区大小
+    QMap<QString, QList<LogEntry>> m_logBuffer; // 按文件名分组的日志缓冲区
+    LogLevel m_logLevel; // 日志级别
+    QTimer* m_flushTimer; // 定时刷新定时器
 };
 
 class ShellBrowser : public QWebEngineView {
@@ -422,12 +424,21 @@ public:
         // 检查平台兼容性
         #if defined(Q_OS_WIN)
             // Windows 平台特殊处理
-            DWORD dwVersion = GetVersion();
-            DWORD dwMajorVersion = (DWORD)(LOBYTE(LOWORD(dwVersion)));
+            bool isOldWindows = false;
             
-            // Windows 7或更低版本(Windows 7 = 6.1)可能存在WebGL兼容性问题
-            if (dwMajorVersion < 6 || (dwMajorVersion == 6 && HIBYTE(LOWORD(dwVersion)) <= 1)) {
-                Logger::instance().appEvent("检测到Windows 7或更低版本，禁用硬件加速以提高兼容性", INFO);
+            #if (QT_VERSION >= QT_VERSION_CHECK(5, 9, 0))
+                // Qt 5.9+提供了更好的平台检测方法
+                QString winVersion = QSysInfo::productVersion();
+                isOldWindows = winVersion.startsWith("6.0") || winVersion.startsWith("6.1") || 
+                               winVersion.startsWith("5."); // Vista, 7或更低版本
+            #else
+                // 使用VersionHelpers.h中的API (Windows 8.1+推荐的方式)
+                #include <VersionHelpers.h>
+                isOldWindows = !IsWindows8OrGreater(); // 如果不是Windows 8或更高版本
+            #endif
+            
+            if (isOldWindows) {
+                Logger::instance().appEvent("检测到Windows 7或更低版本，禁用硬件加速以提高兼容性", L_INFO);
                 enableHardwareAcceleration = false;
             }
         #endif
@@ -437,12 +448,12 @@ public:
             settings->setAttribute(QWebEngineSettings::WebGLEnabled, true);
             settings->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled, true);
             
-            Logger::instance().appEvent("已启用WebGL和2D Canvas加速", INFO);
+            Logger::instance().appEvent("已启用WebGL和2D Canvas加速", L_INFO);
         } else {
             // 禁用硬件加速
             settings->setAttribute(QWebEngineSettings::WebGLEnabled, false);
             settings->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled, false);
-            Logger::instance().appEvent("已禁用硬件加速功能", INFO);
+            Logger::instance().appEvent("已禁用硬件加速功能", L_INFO);
         }
         
         // 禁用可能影响安全的功能
@@ -475,12 +486,12 @@ public:
             if (needFocusCheck && !this->isActiveWindow()) {
                 this->raise();
                 this->activateWindow();
-                Logger::instance().appEvent("应用程序重新获取焦点", DEBUG);
+                Logger::instance().appEvent("应用程序重新获取焦点", L_DEBUG);
             }
             
             // 检查全屏状态
             if (needFullscreenCheck && this->windowState() != Qt::WindowFullScreen) {
-                Logger::instance().appEvent("检测到非全屏状态，正在恢复全屏", INFO);
+                Logger::instance().appEvent("检测到非全屏状态，正在恢复全屏", L_INFO);
                 this->setWindowState(Qt::WindowFullScreen);
                 this->showFullScreen();
             }
@@ -494,7 +505,7 @@ public:
         QShortcut* refreshShortcut = new QShortcut(QKeySequence("Ctrl+R"), this);
         connect(refreshShortcut, &QShortcut::activated, this, [this]() {
             this->reload();
-            Logger::instance().appEvent("用户使用Ctrl+R刷新页面", INFO);
+            Logger::instance().appEvent("用户使用Ctrl+R刷新页面", L_INFO);
         });
     }
     
@@ -527,7 +538,7 @@ protected:
             // 记录检测到的组合键
             if (keyEvent->modifiers() != Qt::NoModifier) {
                 QString keySequence = QKeySequence(keyEvent->key() | keyEvent->modifiers()).toString();
-                Logger::instance().appEvent(QString("检测到快捷键: %1").arg(keySequence), INFO);
+                Logger::instance().appEvent(QString("检测到快捷键: %1").arg(keySequence), L_INFO);
             }
             
             // 拦截所有其他组合键
@@ -579,12 +590,12 @@ protected:
     void keyPressEvent(QKeyEvent *event) override {
         // 记录所有按键
         QString keyName = QKeySequence(event->key() | event->modifiers()).toString();
-        Logger::instance().appEvent(QString("按键事件: %1").arg(keyName), INFO);
+        Logger::instance().appEvent(QString("按键事件: %1").arg(keyName), L_INFO);
         
         // 处理Ctrl+R刷新页面
         if (event->key() == Qt::Key_R && event->modifiers() == Qt::ControlModifier) {
             reload();
-            Logger::instance().appEvent("执行页面刷新操作", INFO);
+            Logger::instance().appEvent("执行页面刷新操作", L_INFO);
             event->accept();
             return;
         }
@@ -609,7 +620,7 @@ protected:
             // 记录所有按键
             if (keyEvent->modifiers() != Qt::NoModifier || keyEvent->key() >= Qt::Key_F1) {
                 QString keyName = QKeySequence(keyEvent->key() | keyEvent->modifiers()).toString();
-                Logger::instance().appEvent(QString("全局快捷键: %1").arg(keyName), INFO);
+                Logger::instance().appEvent(QString("全局快捷键: %1").arg(keyName), L_INFO);
             }
             
             // 快速路径：允许Ctrl+R刷新页面通过
@@ -685,7 +696,7 @@ protected:
                 QWindow *window = qobject_cast<QWindow*>(obj);
                 if (window) {
                     window->setWindowState(Qt::WindowFullScreen);
-                    Logger::instance().appEvent("拦截窗口状态变化，强制保持全屏", INFO);
+                    Logger::instance().appEvent("拦截窗口状态变化，强制保持全屏", L_INFO);
                     return true;
                 }
             }
@@ -727,9 +738,9 @@ int main(int argc, char *argv[]) {
     
     // 设置日志级别 - 正式环境可以设置为INFO或WARNING减少日志量
 #ifdef QT_DEBUG
-    Logger::instance().setLogLevel(DEBUG);
+    Logger::instance().setLogLevel(L_DEBUG);
 #else
-    Logger::instance().setLogLevel(INFO);
+    Logger::instance().setLogLevel(L_INFO);
 #endif
     
     // 确保日志目录存在
