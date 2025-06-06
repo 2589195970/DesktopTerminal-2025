@@ -144,6 +144,10 @@ public:
         return config.value("appName").toString("zdf-exam-desktop");
     }
     
+    QString getActualConfigPath() const {
+        return actualConfigPath;
+    }
+    
     // 创建默认配置文件
     bool createDefaultConfig(const QString &path) {
         QJsonObject defaultConfig;
@@ -195,15 +199,39 @@ public:
         return logger;
     }
     
-    // 记录应用程序事件
-    void logEvent(const QString &category, const QString &message) {
-        QFile file("exit.log");
+    // 确保日志目录存在
+    bool ensureLogDirectoryExists() {
+        QString logDir = QCoreApplication::applicationDirPath() + "/log";
+        QDir dir(logDir);
+        if (!dir.exists()) {
+            if (!dir.mkpath(".")) {
+                qDebug("无法创建日志目录: %s", qPrintable(logDir));
+                return false;
+            }
+            qDebug("已创建日志目录: %s", qPrintable(logDir));
+        }
+        return true;
+    }
+    
+    // 记录应用程序事件到指定日志文件
+    void logEvent(const QString &category, const QString &message, const QString &filename = "app.log") {
+        // 确保日志目录存在
+        if (!ensureLogDirectoryExists()) {
+            return;
+        }
+        
+        QString logDir = QCoreApplication::applicationDirPath() + "/log";
+        QString logFilePath = logDir + "/" + filename;
+        
+        QFile file(logFilePath);
         if (file.open(QIODevice::Append | QIODevice::Text)) {
             QTextStream out(&file);
             out.setCodec("UTF-8"); // 统一使用UTF-8编码
             out << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
                 << " | " << category << " | " << message << "\n";
             file.close();
+        } else {
+            qDebug("无法写入日志文件: %s, 错误: %s", qPrintable(logFilePath), qPrintable(file.errorString()));
         }
     }
     
@@ -212,9 +240,21 @@ public:
         logEvent("应用程序", event);
     }
     
+    // 配置加载事件
+    void configEvent(const QString &event) {
+        logEvent("配置文件", event, "config.log");
+    }
+    
+    // 记录启动信息，包括配置文件位置
+    void logStartup(const QString &configPath) {
+        QString message = QString("程序启动成功，使用配置文件: %1").arg(configPath);
+        logEvent("启动", message, "startup.log");
+        qDebug("%s", qPrintable(message));
+    }
+    
     // 热键事件
     void hotkeyEvent(const QString &result) {
-        logEvent("热键退出尝试", result);
+        logEvent("热键退出尝试", result, "exit.log");
     }
     
     // 显示消息框（确保UI文本也使用正确编码）
@@ -386,19 +426,31 @@ int main(int argc, char *argv[]) {
     app.setApplicationName("DesktopTerminal");
     app.setOrganizationName("智多分");
     
+    // 确保日志目录存在
+    Logger::instance().ensureLogDirectoryExists();
+    Logger::instance().appEvent("应用程序初始化...");
+    
     // 输出当前工作目录，帮助调试
     qDebug("当前工作目录: %s", qPrintable(QDir::currentPath()));
     qDebug("应用程序目录: %s", qPrintable(QCoreApplication::applicationDirPath()));
+    
+    // 记录系统环境信息
+    QString systemInfo = QString("系统信息: %1, Qt版本: %2")
+                        .arg(QSysInfo::prettyProductName())
+                        .arg(qVersion());
+    Logger::instance().appEvent(systemInfo);
     
     // 加载配置文件
     ConfigManager &configManager = ConfigManager::instance();
     if (!configManager.loadConfig()) {
         qDebug("配置文件加载失败，尝试创建默认配置文件");
+        Logger::instance().configEvent("配置文件加载失败，尝试创建默认配置文件");
         
         // 优先在应用程序目录下创建 config.json（方便修改）
         QString defaultConfigPath = QCoreApplication::applicationDirPath() + "/config.json";
         if (configManager.createDefaultConfig(defaultConfigPath) && configManager.loadConfig(defaultConfigPath)) {
             qDebug("已创建并加载默认配置文件: %s", qPrintable(defaultConfigPath));
+            Logger::instance().configEvent(QString("已创建并加载默认配置文件: %1").arg(defaultConfigPath));
             QMessageBox::information(nullptr, "提示", 
                 QString("已创建默认配置文件:\n%1\n\n"
                         "您可以编辑此文件来修改应用配置:\n"
@@ -410,8 +462,10 @@ int main(int argc, char *argv[]) {
             defaultConfigPath = QCoreApplication::applicationDirPath() + "/resources/config.json";
             if (configManager.createDefaultConfig(defaultConfigPath) && configManager.loadConfig(defaultConfigPath)) {
                 qDebug("已创建并加载默认配置文件: %s", qPrintable(defaultConfigPath));
+                Logger::instance().configEvent(QString("已创建并加载默认配置文件: %1").arg(defaultConfigPath));
             } else {
                 qDebug("无法创建或加载默认配置文件，程序将退出");
+                Logger::instance().configEvent("无法创建或加载默认配置文件，程序将退出");
                 QMessageBox::critical(nullptr, "错误", 
                     "无法加载配置文件，程序将退出。\n"
                     "请确保程序有权限在应用程序目录创建文件。");
@@ -419,6 +473,9 @@ int main(int argc, char *argv[]) {
             }
         }
     }
+    
+    // 记录成功加载的配置文件路径
+    Logger::instance().logStartup(configManager.getActualConfigPath());
     
     // 安装全局事件过滤器
     GlobalEventFilter *filter = new GlobalEventFilter();
