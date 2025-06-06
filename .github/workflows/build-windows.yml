@@ -93,4 +93,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: windows-installer
-        path: Output\zdf-exam-desktop-setup-x86.exe 
+        path: Output\智多分-机考桌面端-setup-x86.exe 
