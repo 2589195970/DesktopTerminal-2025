@@ -203,8 +203,7 @@ private:
 };
 
 // 统一日志管理类
-class Logger : public QObject {
-    Q_OBJECT
+class Logger {
 public:
     enum LogLevel {
         DEBUG,
@@ -341,19 +340,21 @@ public:
         flushAllLogBuffers();
     }
 
-public slots:
+    // 定时刷新日志缓冲区
     void timerFlushLogBuffers() {
         flushAllLogBuffers();
     }
     
 private:
-    Logger() : QObject(nullptr), m_logLevel(INFO) {
+    Logger() : m_logLevel(INFO) {
         // 初始化时设置应用程序默认编码
         QTextCodec::setCodecForLocale(QTextCodec::codecForName("UTF-8"));
         
         // 启动定时刷新定时器
-        QTimer *flushTimer = new QTimer(this);
-        connect(flushTimer, &QTimer::timeout, this, &Logger::timerFlushLogBuffers);
+        QTimer *flushTimer = new QTimer();
+        connect(flushTimer, &QTimer::timeout, this, [this]() {
+            this->timerFlushLogBuffers();
+        });
         flushTimer->start(5000); // 每5秒刷新一次日志
     }
     
@@ -374,7 +375,6 @@ private:
 };
 
 class ShellBrowser : public QWebEngineView {
-    Q_OBJECT
 private:
     QHotkey* exitHotkeyF10;
     QHotkey* exitHotkeyBackslash;
@@ -781,6 +781,4 @@ int main(int argc, char *argv[]) {
     });
     
     return app.exec();
-}
-
-#include "main.moc" 
+} 
