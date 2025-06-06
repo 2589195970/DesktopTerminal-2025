@@ -83,3 +83,27 @@ cmake --build .
 5. 安装路径：
    - `C:\Program Files\zdf-exam-desktop` (64位系统)
    - `C:\Program Files (x86)\zdf-exam-desktop` (32位系统) 
+
+## 编译问题修复记录
+
+### 2024年6月修复 - QWebEngineSettings和Logger问题
+
+1. **缺少头文件修复**
+   - 添加 QWebEngineSettings 头文件
+   - 添加 QWebEnginePage 头文件
+   - 添加 QWebEngineProfile 头文件
+
+2. **Logger类修改**
+   - Logger类现在继承自QObject
+   - 添加Q_OBJECT宏以支持信号槽
+   - 将flushAllLogBuffers函数移入timerFlushLogBuffers槽函数
+   - 修复connect语法，使用恰当的父子关系
+   
+3. **QWebEngineSettings用法修改**
+   - 从page()->settings()改为使用QWebEngineSettings::globalSettings()
+   
+4. **弃用API修复**
+   - 将Qt::AA_MacPluginApplication替换为Qt::AA_PluginApplication
+   
+5. **构建系统改进**
+   - 在CMake中添加Qt5::Core和Qt5::WebEngine库依赖 

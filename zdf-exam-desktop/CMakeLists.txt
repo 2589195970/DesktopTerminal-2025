@@ -14,10 +14,17 @@ if(WIN32)
     add_compile_options("/utf-8")
 endif()
 
-find_package(Qt5 COMPONENTS Widgets WebEngineWidgets REQUIRED)
+# 确保找到Qt WebEngine相关组件
+find_package(Qt5 COMPONENTS Core Widgets WebEngineWidgets WebEngine REQUIRED)
 
 # 使用本地的 QHotkey 而不是 FetchContent
 add_subdirectory(QHotkey)
 
 add_executable(zdf-exam-desktop main.cpp)
-target_link_libraries(zdf-exam-desktop PRIVATE Qt5::Widgets Qt5::WebEngineWidgets QHotkey::QHotkey) 
+target_link_libraries(zdf-exam-desktop PRIVATE 
+    Qt5::Core 
+    Qt5::Widgets 
+    Qt5::WebEngineWidgets 
+    Qt5::WebEngine 
+    QHotkey::QHotkey
+) 

@@ -1,5 +1,8 @@
 #include <QApplication>
 #include <QWebEngineView>
+#include <QWebEngineSettings>
+#include <QWebEnginePage>
+#include <QWebEngineProfile>
 #include <QKeyEvent>
 #include <QInputDialog>
 #include <QMessageBox>
@@ -19,6 +22,7 @@
 #include <QDebug>
 #include <QStandardPaths>
 #include <QWindowStateChangeEvent>
+#include <QShortcut>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -199,7 +203,8 @@ private:
 };
 
 // 统一日志管理类
-class Logger {
+class Logger : public QObject {
+    Q_OBJECT
 public:
     enum LogLevel {
         DEBUG,
@@ -335,15 +340,20 @@ public:
     void shutdown() {
         flushAllLogBuffers();
     }
+
+public slots:
+    void timerFlushLogBuffers() {
+        flushAllLogBuffers();
+    }
     
 private:
-    Logger() : m_logLevel(INFO) {
+    Logger() : QObject(nullptr), m_logLevel(INFO) {
         // 初始化时设置应用程序默认编码
         QTextCodec::setCodecForLocale(QTextCodec::codecForName("UTF-8"));
         
         // 启动定时刷新定时器
-        QTimer *flushTimer = new QTimer();
-        connect(flushTimer, &QTimer::timeout, this, &Logger::flushAllLogBuffers);
+        QTimer *flushTimer = new QTimer(this);
+        connect(flushTimer, &QTimer::timeout, this, &Logger::timerFlushLogBuffers);
         flushTimer->start(5000); // 每5秒刷新一次日志
     }
     
@@ -379,7 +389,7 @@ public:
         setMinimumSize(1280, 800);
         
         // WebEngine性能优化 - 兼容性优先
-        QWebEngineSettings *settings = page()->settings();
+        QWebEngineSettings *settings = QWebEngineSettings::globalSettings();
         
         // 基础设置 - 确保基本功能正常
         settings->setAttribute(QWebEngineSettings::JavascriptEnabled, true);
@@ -464,6 +474,13 @@ public:
         
         // 禁用右键菜单
         setContextMenuPolicy(Qt::NoContextMenu);
+        
+        // 注册刷新快捷键
+        QShortcut* refreshShortcut = new QShortcut(QKeySequence("Ctrl+R"), this);
+        connect(refreshShortcut, &QShortcut::activated, this, [this]() {
+            this->reload();
+            Logger::instance().appEvent("用户使用Ctrl+R刷新页面", Logger::INFO);
+        });
     }
     
     // 允许启用/禁用焦点检查
@@ -486,7 +503,19 @@ protected:
     bool event(QEvent *event) override {
         if (event->type() == QEvent::ShortcutOverride) {
             QKeyEvent *keyEvent = static_cast<QKeyEvent*>(event);
-            // 拦截所有组合键
+            
+            // 允许Ctrl+R通过
+            if (keyEvent->key() == Qt::Key_R && keyEvent->modifiers() == Qt::ControlModifier) {
+                return QWebEngineView::event(event);
+            }
+            
+            // 记录检测到的组合键
+            if (keyEvent->modifiers() != Qt::NoModifier) {
+                QString keySequence = QKeySequence(keyEvent->key() | keyEvent->modifiers()).toString();
+                Logger::instance().appEvent(QString("检测到快捷键: %1").arg(keySequence), Logger::INFO);
+            }
+            
+            // 拦截所有其他组合键
             if (keyEvent->modifiers() != Qt::NoModifier) {
                 event->accept();
                 return true;
@@ -533,6 +562,18 @@ protected:
     }
     
     void keyPressEvent(QKeyEvent *event) override {
+        // 记录所有按键
+        QString keyName = QKeySequence(event->key() | event->modifiers()).toString();
+        Logger::instance().appEvent(QString("按键事件: %1").arg(keyName), Logger::INFO);
+        
+        // 处理Ctrl+R刷新页面
+        if (event->key() == Qt::Key_R && event->modifiers() == Qt::ControlModifier) {
+            reload();
+            Logger::instance().appEvent("执行页面刷新操作", Logger::INFO);
+            event->accept();
+            return;
+        }
+        
         // 拦截 Command+Option+Escape (Force Quit)
         if (event->key() == Qt::Key_Escape && 
             (event->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier))) {
@@ -550,35 +591,22 @@ protected:
         if (event->type() == QEvent::KeyPress) {
             QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
             
+            // 记录所有按键
+            if (keyEvent->modifiers() != Qt::NoModifier || keyEvent->key() >= Qt::Key_F1) {
+                QString keyName = QKeySequence(keyEvent->key() | keyEvent->modifiers()).toString();
+                Logger::instance().appEvent(QString("全局快捷键: %1").arg(keyName), Logger::INFO);
+            }
+            
             // 快速路径：允许Ctrl+R刷新页面通过
             if (keyEvent->key() == Qt::Key_R && 
                 keyEvent->modifiers() == Qt::ControlModifier) {
                 return false; // 允许事件传递
             }
             
-            // 记录所有组合键尝试（使用低级别日志，减少不必要的记录）
+            // 拦截所有组合键
             if (keyEvent->modifiers() != Qt::NoModifier) {
-                // 优化：只有在DEBUG级别时才构建字符串
-                if (Logger::instance().getLogLevel() <= Logger::DEBUG) {
-                    static QMap<int, QString> modifierNames = {
-                        {Qt::ControlModifier, "Ctrl"},
-                        {Qt::AltModifier, "Alt"},
-                        {Qt::ShiftModifier, "Shift"},
-                        {Qt::MetaModifier, "Meta"}
-                    };
-                    
-                    QStringList modList;
-                    for (auto it = modifierNames.begin(); it != modifierNames.end(); ++it) {
-                        if (keyEvent->modifiers() & it.key()) {
-                            modList << it.value();
-                        }
-                    }
-                    
-                    QString keyName = QKeySequence(keyEvent->key()).toString();
-                    QString combination = modList.join("+") + "+" + keyName;
-                    
-                    Logger::instance().appEvent(QString("拦截组合键: %1").arg(combination), Logger::DEBUG);
-                }
+                event->accept();
+                return true;
             }
             
             // 拦截 Alt+Tab/Option+Tab (App Switcher)
@@ -679,7 +707,7 @@ int main(int argc, char *argv[]) {
     
 #ifdef Q_OS_MAC
     // Mac 平台特殊处理
-    app.setAttribute(Qt::AA_MacPluginApplication, true); // 隐藏 Dock 图标
+    app.setAttribute(Qt::AA_PluginApplication, true); // 隐藏 Dock 图标
 #endif
     
     // 设置日志级别 - 正式环境可以设置为INFO或WARNING减少日志量
