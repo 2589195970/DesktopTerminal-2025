@@ -202,16 +202,61 @@ private:
     QString actualConfigPath;
 };
 
-// 统一日志管理类
-class Logger {
-public:
-    enum LogLevel {
-        DEBUG,
-        INFO,
-        WARNING,
-        ERROR
-    };
+// 前向声明
+class QTimer;
 
+// 日志级别枚举
+enum LogLevel {
+    DEBUG,
+    INFO,
+    WARNING,
+    ERROR
+};
+
+// 日志条目结构
+struct LogEntry {
+    QDateTime timestamp;
+    QString category;
+    QString message;
+    QString filename;
+};
+
+// 简化的日志管理类，避免使用QObject和信号槽
+class Logger {
+private:
+    // 私有构造函数，防止外部实例化
+    Logger() : m_logLevel(INFO) {
+        // 初始化时设置应用程序默认编码
+        QTextCodec::setCodecForLocale(QTextCodec::codecForName("UTF-8"));
+        
+        // 启动定时刷新定时器
+        m_flushTimer = new QTimer();
+        QObject::connect(m_flushTimer, &QTimer::timeout, [this]() {
+            this->flushAllLogBuffers();
+        });
+        m_flushTimer->start(5000); // 每5秒刷新一次日志
+    }
+    
+    // 禁止拷贝和赋值
+    Logger(const Logger&) = delete;
+    Logger& operator=(const Logger&) = delete;
+    
+    ~Logger() {
+        flushAllLogBuffers();
+        if (m_flushTimer) {
+            m_flushTimer->stop();
+            delete m_flushTimer;
+        }
+    }
+    
+    // 成员变量
+    static const int LOG_BUFFER_SIZE = 10; // 缓冲区大小
+    QMap<QString, QList<LogEntry>> m_logBuffer; // 按文件名分组的日志缓冲区
+    LogLevel m_logLevel; // 日志级别
+    QTimer* m_flushTimer; // 定时刷新定时器
+    
+public:
+    // 单例访问点
     static Logger& instance() {
         static Logger logger;
         return logger;
@@ -338,40 +383,10 @@ public:
     // 程序退出时调用
     void shutdown() {
         flushAllLogBuffers();
+        if (m_flushTimer) {
+            m_flushTimer->stop();
+        }
     }
-
-    // 定时刷新日志缓冲区
-    void timerFlushLogBuffers() {
-        flushAllLogBuffers();
-    }
-    
-private:
-    Logger() : m_logLevel(INFO) {
-        // 初始化时设置应用程序默认编码
-        QTextCodec::setCodecForLocale(QTextCodec::codecForName("UTF-8"));
-        
-        // 启动定时刷新定时器
-        QTimer *flushTimer = new QTimer();
-        connect(flushTimer, &QTimer::timeout, this, [this]() {
-            this->timerFlushLogBuffers();
-        });
-        flushTimer->start(5000); // 每5秒刷新一次日志
-    }
-    
-    ~Logger() {
-        flushAllLogBuffers();
-    }
-    
-    struct LogEntry {
-        QDateTime timestamp;
-        QString category;
-        QString message;
-        QString filename;
-    };
-    
-    static const int LOG_BUFFER_SIZE = 10; // 缓冲区大小
-    QMap<QString, QList<LogEntry>> m_logBuffer; // 按文件名分组的日志缓冲区
-    LogLevel m_logLevel; // 日志级别
 };
 
 class ShellBrowser : public QWebEngineView {
@@ -412,7 +427,7 @@ public:
             
             // Windows 7或更低版本(Windows 7 = 6.1)可能存在WebGL兼容性问题
             if (dwMajorVersion < 6 || (dwMajorVersion == 6 && HIBYTE(LOWORD(dwVersion)) <= 1)) {
-                Logger::instance().appEvent("检测到Windows 7或更低版本，禁用硬件加速以提高兼容性", Logger::INFO);
+                Logger::instance().appEvent("检测到Windows 7或更低版本，禁用硬件加速以提高兼容性", INFO);
                 enableHardwareAcceleration = false;
             }
         #endif
@@ -422,12 +437,12 @@ public:
             settings->setAttribute(QWebEngineSettings::WebGLEnabled, true);
             settings->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled, true);
             
-            Logger::instance().appEvent("已启用WebGL和2D Canvas加速", Logger::INFO);
+            Logger::instance().appEvent("已启用WebGL和2D Canvas加速", INFO);
         } else {
             // 禁用硬件加速
             settings->setAttribute(QWebEngineSettings::WebGLEnabled, false);
             settings->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled, false);
-            Logger::instance().appEvent("已禁用硬件加速功能", Logger::INFO);
+            Logger::instance().appEvent("已禁用硬件加速功能", INFO);
         }
         
         // 禁用可能影响安全的功能
@@ -460,12 +475,12 @@ public:
             if (needFocusCheck && !this->isActiveWindow()) {
                 this->raise();
                 this->activateWindow();
-                Logger::instance().appEvent("应用程序重新获取焦点", Logger::DEBUG);
+                Logger::instance().appEvent("应用程序重新获取焦点", DEBUG);
             }
             
             // 检查全屏状态
             if (needFullscreenCheck && this->windowState() != Qt::WindowFullScreen) {
-                Logger::instance().appEvent("检测到非全屏状态，正在恢复全屏", Logger::INFO);
+                Logger::instance().appEvent("检测到非全屏状态，正在恢复全屏", INFO);
                 this->setWindowState(Qt::WindowFullScreen);
                 this->showFullScreen();
             }
@@ -479,7 +494,7 @@ public:
         QShortcut* refreshShortcut = new QShortcut(QKeySequence("Ctrl+R"), this);
         connect(refreshShortcut, &QShortcut::activated, this, [this]() {
             this->reload();
-            Logger::instance().appEvent("用户使用Ctrl+R刷新页面", Logger::INFO);
+            Logger::instance().appEvent("用户使用Ctrl+R刷新页面", INFO);
         });
     }
     
@@ -512,7 +527,7 @@ protected:
             // 记录检测到的组合键
             if (keyEvent->modifiers() != Qt::NoModifier) {
                 QString keySequence = QKeySequence(keyEvent->key() | keyEvent->modifiers()).toString();
-                Logger::instance().appEvent(QString("检测到快捷键: %1").arg(keySequence), Logger::INFO);
+                Logger::instance().appEvent(QString("检测到快捷键: %1").arg(keySequence), INFO);
             }
             
             // 拦截所有其他组合键
@@ -564,12 +579,12 @@ protected:
     void keyPressEvent(QKeyEvent *event) override {
         // 记录所有按键
         QString keyName = QKeySequence(event->key() | event->modifiers()).toString();
-        Logger::instance().appEvent(QString("按键事件: %1").arg(keyName), Logger::INFO);
+        Logger::instance().appEvent(QString("按键事件: %1").arg(keyName), INFO);
         
         // 处理Ctrl+R刷新页面
         if (event->key() == Qt::Key_R && event->modifiers() == Qt::ControlModifier) {
             reload();
-            Logger::instance().appEvent("执行页面刷新操作", Logger::INFO);
+            Logger::instance().appEvent("执行页面刷新操作", INFO);
             event->accept();
             return;
         }
@@ -594,7 +609,7 @@ protected:
             // 记录所有按键
             if (keyEvent->modifiers() != Qt::NoModifier || keyEvent->key() >= Qt::Key_F1) {
                 QString keyName = QKeySequence(keyEvent->key() | keyEvent->modifiers()).toString();
-                Logger::instance().appEvent(QString("全局快捷键: %1").arg(keyName), Logger::INFO);
+                Logger::instance().appEvent(QString("全局快捷键: %1").arg(keyName), INFO);
             }
             
             // 快速路径：允许Ctrl+R刷新页面通过
@@ -670,7 +685,7 @@ protected:
                 QWindow *window = qobject_cast<QWindow*>(obj);
                 if (window) {
                     window->setWindowState(Qt::WindowFullScreen);
-                    Logger::instance().appEvent("拦截窗口状态变化，强制保持全屏", Logger::INFO);
+                    Logger::instance().appEvent("拦截窗口状态变化，强制保持全屏", INFO);
                     return true;
                 }
             }
@@ -712,9 +727,9 @@ int main(int argc, char *argv[]) {
     
     // 设置日志级别 - 正式环境可以设置为INFO或WARNING减少日志量
 #ifdef QT_DEBUG
-    Logger::instance().setLogLevel(Logger::DEBUG);
+    Logger::instance().setLogLevel(DEBUG);
 #else
-    Logger::instance().setLogLevel(Logger::INFO);
+    Logger::instance().setLogLevel(INFO);
 #endif
     
     // 确保日志目录存在
