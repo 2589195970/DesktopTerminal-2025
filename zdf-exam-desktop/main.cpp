@@ -18,6 +18,7 @@
 #include <QDir>
 #include <QDebug>
 #include <QStandardPaths>
+#include <QWindowStateChangeEvent>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -282,6 +283,7 @@ private:
     QHotkey* exitHotkeyF10;
     QHotkey* exitHotkeyBackslash;
     QTimer* focusTimer;
+    QTimer* fullscreenCheckTimer; // 用于定期检查全屏状态
     
 public:
     ShellBrowser() {
@@ -309,9 +311,21 @@ public:
             if (!this->isActiveWindow()) {
                 this->raise();
                 this->activateWindow();
+                Logger::instance().appEvent("应用程序重新获取焦点");
             }
         });
         focusTimer->start(500);
+        
+        // 定时器检查全屏状态
+        fullscreenCheckTimer = new QTimer(this);
+        connect(fullscreenCheckTimer, &QTimer::timeout, this, [this]() {
+            if (this->windowState() != Qt::WindowFullScreen) {
+                Logger::instance().appEvent("检测到非全屏状态，正在恢复全屏");
+                this->setWindowState(Qt::WindowFullScreen);
+                this->showFullScreen();
+            }
+        });
+        fullscreenCheckTimer->start(1000);
         
         // 禁用右键菜单
         setContextMenuPolicy(Qt::NoContextMenu);
@@ -389,17 +403,88 @@ protected:
     bool eventFilter(QObject *obj, QEvent *event) override {
         if (event->type() == QEvent::KeyPress) {
             QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
+            
+            // 记录所有组合键尝试
+            if (keyEvent->modifiers() != Qt::NoModifier) {
+                QString modifiers;
+                if (keyEvent->modifiers() & Qt::ControlModifier) modifiers += "Ctrl+";
+                if (keyEvent->modifiers() & Qt::AltModifier) modifiers += "Alt+";
+                if (keyEvent->modifiers() & Qt::ShiftModifier) modifiers += "Shift+";
+                if (keyEvent->modifiers() & Qt::MetaModifier) modifiers += "Meta+";
+                
+                QString keyName = QKeySequence(keyEvent->key()).toString();
+                QString combination = modifiers + keyName;
+                
+                Logger::instance().appEvent(QString("拦截组合键: %1").arg(combination));
+            }
+            
+            // 拦截 Alt+Tab/Option+Tab (App Switcher)
+            if (keyEvent->key() == Qt::Key_Tab && 
+                ((keyEvent->modifiers() & Qt::AltModifier) || (keyEvent->modifiers() & Qt::MetaModifier))) {
+                return true;
+            }
+            
+            // 拦截 Ctrl+Alt+Del (任务管理器)
+            if (keyEvent->key() == Qt::Key_Delete && 
+                (keyEvent->modifiers() & Qt::ControlModifier) && 
+                (keyEvent->modifiers() & Qt::AltModifier)) {
+                return true;
+            }
+            
             // 拦截 Command+Option+Escape (Force Quit)
             if (keyEvent->key() == Qt::Key_Escape &&
                 (keyEvent->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier))) {
                 return true;
             }
-            // 拦截 Command+Tab (App Switcher)
-            if (keyEvent->key() == Qt::Key_Tab && 
-                (keyEvent->modifiers() & (Qt::MetaModifier | Qt::AltModifier))) {
+            
+            // 拦截 Alt+F4/Command+Q (关闭窗口/退出应用)
+            if ((keyEvent->key() == Qt::Key_F4 && (keyEvent->modifiers() & Qt::AltModifier)) || 
+                (keyEvent->key() == Qt::Key_Q && (keyEvent->modifiers() & Qt::MetaModifier))) {
+                return true;
+            }
+            
+            // 拦截 Windows键/Command键 (开始菜单/Dock)
+            if (keyEvent->key() == Qt::Key_Meta) {
+                return true;
+            }
+            
+            // 拦截任务视图快捷键 (Win+Tab/Mission Control)
+            if ((keyEvent->key() == Qt::Key_Tab && (keyEvent->modifiers() & Qt::MetaModifier)) ||
+                // Mission Control (Ctrl+Up) on Mac
+                (keyEvent->key() == Qt::Key_Up && (keyEvent->modifiers() & Qt::ControlModifier))) {
+                return true;
+            }
+            
+            // 拦截 Cmd+Space (Spotlight on Mac)
+            if (keyEvent->key() == Qt::Key_Space && (keyEvent->modifiers() & Qt::MetaModifier)) {
+                return true;
+            }
+            
+            // 拦截 Cmd+H (隐藏窗口 on Mac)
+            if (keyEvent->key() == Qt::Key_H && (keyEvent->modifiers() & Qt::MetaModifier)) {
+                return true;
+            }
+            
+            // 拦截 Cmd+M (最小化窗口 on Mac)
+            if (keyEvent->key() == Qt::Key_M && (keyEvent->modifiers() & Qt::MetaModifier)) {
                 return true;
             }
         }
+        
+        // 拦截窗口状态变化事件
+        if (event->type() == QEvent::WindowStateChange) {
+            QWindowStateChangeEvent *stateEvent = static_cast<QWindowStateChangeEvent*>(event);
+            if (!(stateEvent->oldState() & Qt::WindowFullScreen)) {
+                // 如果窗口要从全屏状态改变，阻止该操作
+                QWindow *window = qobject_cast<QWindow*>(obj);
+                if (window) {
+                    window->setWindowState(Qt::WindowFullScreen);
+                    Logger::instance().appEvent("拦截窗口状态变化，强制保持全屏");
+                    return true;
+                }
+            }
+        }
+        
         return QObject::eventFilter(obj, event);
     }
 };
@@ -425,6 +510,14 @@ int main(int argc, char *argv[]) {
     // 设置应用程序属性
     app.setApplicationName("DesktopTerminal");
     app.setOrganizationName("智多分");
+    
+    // 设置全屏窗口应用程序属性
+    app.setQuitOnLastWindowClosed(false); // 防止最后一个窗口关闭时应用退出
+    
+#ifdef Q_OS_MAC
+    // Mac 平台特殊处理
+    app.setAttribute(Qt::AA_MacPluginApplication, true); // 隐藏 Dock 图标
+#endif
     
     // 确保日志目录存在
     Logger::instance().ensureLogDirectoryExists();

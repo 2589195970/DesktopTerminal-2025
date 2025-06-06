@@ -8,7 +8,7 @@ Unicode true
 ; ─────────────────────────────────────────────
 ; 常量定义
 ; ─────────────────────────────────────────────
-!define APPNAME        "zdf-exam-desktop"
+!define APPNAME        "智多分-机考桌面端"
 !define COMPANYNAME    "智多分"
 !define DESCRIPTION    "教育考试场景专用安全浏览器"
 !define VERSIONMAJOR   1
