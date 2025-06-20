@@ -4,6 +4,7 @@ Unicode true
 ; 包含必要的头文件
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
+!include "x64.nsh"
 
 ; ─────────────────────────────────────────────
 ; 常量定义
@@ -67,7 +68,7 @@ Section "主程序" SecMain
     ${EndIf}
     
     ReadRegStr $0 HKLM "SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x86" "Version"
-    ${If} $0 == ""
+    ${If} "$0" == ""
         ; 如果没有找到VC++ 2017运行时，尝试安装
         DetailPrint "正在安装 Visual C++ 2017 Redistributable (x86)..."
         File "vcredist_x86.exe"
