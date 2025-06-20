@@ -484,14 +484,18 @@ void handleFatalError(const QString &errorMsg) {
 
 // --------------------------- main ---------------------------
 int main(int argc,char *argv[]){
+    // ============ Windows版本检测 ============
+#ifdef Q_OS_WIN
+    QString winVer = QSysInfo::productVersion();
+    QVersionNumber winVersion = QVersionNumber::fromString(winVer);
+    bool isWin7OrOlder = winVersion.majorVersion() < 6 || 
+                        (winVersion.majorVersion() == 6 && winVersion.minorVersion() <= 1);
+#else
+    bool isWin7OrOlder = false;
+#endif
+
     // ============ 关键修复：彻底禁用硬件加速解决黑屏和高CPU问题 ============
 #ifdef Q_OS_WIN
-    // 更精确的Windows版本检测
-    QString winVer = QSysInfo::productVersion();
-    QVersionNumber version = QVersionNumber::fromString(winVer);
-    bool isWin7OrOlder = version.majorVersion() < 6 || 
-                        (version.majorVersion() == 6 && version.minorVersion() <= 1);
-    
     if (isWin7OrOlder) {
         // Windows 7及更老版本：彻底禁用GPU进程和硬件加速
         qputenv("QTWEBENGINE_CHROMIUM_FLAGS", 
@@ -555,11 +559,7 @@ int main(int argc,char *argv[]){
     Logger::instance().collectSystemInfo();
 
 #ifdef Q_OS_WIN
-    // 使用与上面相同的版本检测逻辑
-    QString winVer = QSysInfo::productVersion();
-    QVersionNumber version = QVersionNumber::fromString(winVer);
-    bool isWin7OrOlder = version.majorVersion() < 6 || 
-                        (version.majorVersion() == 6 && version.minorVersion() <= 1);
+    // 重用前面定义的变量，避免重复定义
     if (isWin7OrOlder) {
         Logger::instance().appEvent("检测到Windows 7系统，已启用兼容模式（彻底禁用硬件加速）", L_WARNING);
     } else {
