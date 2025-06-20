@@ -114,8 +114,8 @@ private:
         m_flushTimer=new QTimer();
         QObject::connect(m_flushTimer,&QTimer::timeout,[this](){flushAllLogBuffers();});
         
-        // 针对1核2线程环境：大幅减少定时器频率，避免线程竞争
-        m_flushTimer->start(30000); // 从5秒改为30秒
+        // 单核心单线程模式：极大减少定时器频率，避免阻塞主线程
+        m_flushTimer->start(60000); // 从30秒改为60秒（1分钟）
     }
     Logger(const Logger&)=delete; Logger& operator=(const Logger&)=delete;
     ~Logger(){shutdown();}
@@ -300,15 +300,39 @@ public:
 
         // 检查是否为低内存Windows 7环境，决定是否使用渐进式启动
         bool useProgressiveLoading = false;
+        bool lowMemory = false;
+        bool isOldCpu = false;
 #ifdef Q_OS_WIN
-        QString winVer=QSysInfo::productVersion();
-        bool isOldWin = winVer.startsWith("6.0")||winVer.startsWith("6.1")||winVer.startsWith("5.");
         if(isOldWin) {
             MEMORYSTATUSEX memStatus;
             memStatus.dwLength = sizeof(memStatus);
             GlobalMemoryStatusEx(&memStatus);
             DWORDLONG totalMemoryMB = memStatus.ullTotalPhys / (1024 * 1024);
             useProgressiveLoading = totalMemoryMB <= 4096;
+            lowMemory = totalMemoryMB <= 4096;
+            
+            // 重新检测CPU信息
+            QString cpuInfo = "Unknown";
+            HKEY hKey;
+            if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, 
+                              "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", 
+                              0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+                DWORD dataSize = 256;
+                char data[256];
+                if (RegQueryValueExA(hKey, "ProcessorNameString", NULL, NULL, 
+                                    (LPBYTE)data, &dataSize) == ERROR_SUCCESS) {
+                    cpuInfo = QString::fromLocal8Bit(data).trimmed();
+                }
+                RegCloseKey(hKey);
+            }
+            
+            QRegExp oldCpuPattern("\\b[iI][3-7]-[2-4]\\d{3}\\b");
+            if (cpuInfo.contains(oldCpuPattern) || 
+                cpuInfo.contains("Haswell", Qt::CaseInsensitive) ||
+                cpuInfo.contains("Ivy Bridge", Qt::CaseInsensitive) ||
+                cpuInfo.contains("Sandy Bridge", Qt::CaseInsensitive)) {
+                isOldCpu = true;
+            }
         }
 #endif
 
@@ -329,10 +353,10 @@ public:
             Logger::instance().appEvent("程序启动 - 使用渐进式加载模式", L_INFO);
             
             // 延迟加载实际页面，给WebEngine更多初始化时间
-            // 1核2线程环境下延长等待时间，确保系统稳定
+            // 单核心单线程环境下延长等待时间，确保系统稳定
             int delayTime = useProgressiveLoading ? ConfigManager::instance().getProgressiveLoadingDelay() : 3000;
             if(lowMemory || isOldCpu) {
-                delayTime = 8000; // 超保守模式：等待8秒
+                delayTime = 15000; // 超保守单线程模式：等待15秒
             }
             
             QTimer::singleShot(delayTime, this, [this](){
@@ -355,30 +379,30 @@ public:
 
         maintenanceTimer=new QTimer(this);
         connect(maintenanceTimer,&QTimer::timeout,this,[this](){
-            // 针对1核2线程环境：减少检查频率，避免CPU竞争
+            // 单核心单线程模式：进一步减少检查频率，避免阻塞主线程
             static int checkCounter = 0;
             checkCounter++;
             
-            // 焦点检查：每3次才检查一次（即每15秒）
-            if(needFocusCheck && checkCounter % 3 == 1) {
+            // 焦点检查：每6次才检查一次（即每60秒）
+            if(needFocusCheck && checkCounter % 6 == 1) {
                 if(!isActiveWindow()){ 
                     raise(); 
                     activateWindow(); 
                 }
             }
             
-            // 全屏检查：每3次才检查一次（即每15秒）
-            if(needFullscreenCheck && checkCounter % 3 == 2) {
+            // 全屏检查：每6次才检查一次（即每60秒）
+            if(needFullscreenCheck && checkCounter % 6 == 3) {
                 if(windowState()!=Qt::WindowFullScreen){ 
                     setWindowState(Qt::WindowFullScreen); 
                     showFullScreen(); 
                 }
             }
             
-            // 低内存环境下的内存监控和回收（频率大幅降低以减少CPU占用）
+            // 低内存环境下的内存监控和回收（频率极大降低以减少CPU占用）
 #ifdef Q_OS_WIN
             static int memoryCheckCounter = 0;
-            if(++memoryCheckCounter >= 40) { // 每200秒检查一次内存（5s * 40）
+            if(++memoryCheckCounter >= 60) { // 每600秒检查一次内存（10分钟一次）
                 memoryCheckCounter = 0;
                 
                 MEMORYSTATUSEX memStatus;
@@ -387,18 +411,18 @@ public:
                 DWORDLONG totalMemoryMB = memStatus.ullTotalPhys / (1024 * 1024);
                 DWORDLONG availMemoryMB = memStatus.ullAvailPhys / (1024 * 1024);
                 
-                if(totalMemoryMB <= 4096 && availMemoryMB < 400) { // 低内存且可用内存少于400MB
+                if(totalMemoryMB <= 4096 && availMemoryMB < 300) { // 低内存且可用内存少于300MB
                     Logger::instance().appEvent(QString("检测到内存不足：总内存%1MB，可用%2MB，触发垃圾回收")
                                                .arg(totalMemoryMB).arg(availMemoryMB), L_WARNING);
                     
-                    // 触发JavaScript垃圾回收（极低频率调用）
+                    // 触发JavaScript垃圾回收（超低频率调用）
                     this->page()->runJavaScript("if(window.gc) window.gc(); "
                                                "if(window.CollectGarbage) window.CollectGarbage();");
                 }
             }
 #endif
         });
-        maintenanceTimer->start(5000); // 从3秒改为5秒，进一步减少CPU占用
+        maintenanceTimer->start(10000); // 从5秒改为10秒，进一步减少主线程阻塞
 
         setContextMenuPolicy(Qt::NoContextMenu);
 
@@ -559,6 +583,10 @@ int main(int argc,char *argv[]){
         qputenv("QTWEBENGINE_DISABLE_SANDBOX", "1");
         qputenv("QT_OPENGL", "software");
         
+        // 强制单线程模式
+        qputenv("QTWEBENGINE_CHROMIUM_FLAGS_SINGLE_THREAD", "1");
+        qputenv("QT_DISABLE_MULTITHREAD", "1");
+        
         QString chromiumFlags = "--no-sandbox --single-process --disable-dev-shm-usage "
                               "--disable-extensions --disable-plugins --disable-background-timer-throttling ";
         
@@ -575,17 +603,26 @@ int main(int argc,char *argv[]){
             chromiumFlags += "--max_old_space_size=256 --disable-smooth-scrolling";
         }
         
-        // 1核2线程专用优化：强制限制线程数和进程数
-        printf("检测到低核心数环境，启用线程优化\n");
-        chromiumFlags += " --max-threads=2 --renderer-process-limit=1 --disable-background-networking "
-                        "--disable-background-timer-throttling --disable-renderer-backgrounding "
-                        "--disable-backgrounding-occluded-windows --disable-ipc-flooding-protection";
+        // 强制单核心单线程模式：彻底禁用多线程
+        printf("强制启用单核心单线程模式\n");
+        chromiumFlags += " --single-threaded --disable-threaded-compositing --disable-threaded-animation "
+                        "--disable-threaded-scrolling --max-threads=1 --renderer-process-limit=1 "
+                        "--disable-background-networking --disable-background-timer-throttling "
+                        "--disable-renderer-backgrounding --disable-backgrounding-occluded-windows "
+                        "--disable-ipc-flooding-protection --disable-features=ThreadedScrolling,CompositorThreading "
+                        "--force-synchronous-resize --disable-async-dns --disable-threaded-paint "
+                        "--disable-partial-raster --disable-zero-copy --disable-gpu-process-preallocation";
         
         qputenv("QTWEBENGINE_CHROMIUM_FLAGS", chromiumFlags.toLocal8Bit());
     }
 #endif
 
     QApplication app(argc,argv);
+    
+    // 强制Qt使用单线程模式
+    app.setAttribute(Qt::AA_DisableHighDpiScaling, true);  // 禁用高DPI缩放以减少计算
+    app.setAttribute(Qt::AA_Use96Dpi, true);               // 使用96DPI以提升性能
+    
     QTextCodec::setCodecForLocale(QTextCodec::codecForName("UTF-8"));
 
 #ifdef Q_OS_WIN
