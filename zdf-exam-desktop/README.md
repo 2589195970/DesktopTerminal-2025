@@ -1,174 +1,209 @@
-# QT 套壳浏览器
+# 智多分机考桌面端
 
-本目录为 QT 实现的套壳浏览器，具体功能和配置请参考顶级 README。
+## 项目概述
+本项目为智多分机考系统的桌面端应用，基于Qt WebEngine开发，提供全屏考试环境。
 
-## 环境依赖与安装说明
+## 主要功能
+- 全屏Web考试界面，防止考生退出
+- F10快捷键密码退出机制
+- 禁用常见系统快捷键（Alt+Tab、Ctrl+Alt+Del等）
+- 系统资源监控和日志记录
+- 操作记录（每次F10尝试都记录）
+- **Windows 7兼容性优化**（v1.2.1+）
+- **老旧CPU性能优化**（v1.2.1+）
 
-### 1. 必须安装的环境
-- Qt5（推荐 5.12 及以上）或 Qt6
-- QtWebEngine 模块（用于嵌入网页）
-- CMake（用于跨平台构建）
-- C++17 编译器（如 g++、clang、MSVC）
+## 系统要求
 
-### 2. 各平台安装方法
+### 最低配置
+- **操作系统**: Windows 7 SP1 (x86/x64)、Windows 8.1、Windows 10/11
+- **CPU**: Intel Core 2代及以上（Sandy Bridge+）、AMD同等级别
+- **内存**: 2GB RAM（推荐4GB+）
+- **网络**: 稳定的互联网连接
 
-#### macOS
+### 推荐配置
+- **操作系统**: Windows 10/11 (x64)
+- **CPU**: Intel Core 6代及以上（Skylake+）
+- **内存**: 4GB+ RAM
+- **网络**: 宽带连接
+
+### 特殊兼容性说明
+- **Windows 7 + 老旧CPU**: 自动检测CPU架构并启用兼容模式
+  - 支持Intel 2-4代CPU（Sandy Bridge、Ivy Bridge、Haswell）
+  - 自动禁用硬件加速和WebGL以提升兼容性
+  - 低内存环境自动优化（≤4GB内存）
+- **性能优化**: 针对老旧硬件的特殊优化
+  - CPU使用率优化：减少定时器频率
+  - 内存监控：60秒间隔检查，低频率垃圾回收
+
+## 技术架构
+
+### 核心技术栈
+- **Qt 5.9.9**: 跨平台框架，兼容Windows 7
+- **Qt WebEngine**: 基于Chromium 56的Web渲染引擎
+- **Visual Studio 2015**: 编译工具链（x86架构）
+- **CMake**: 构建系统
+
+### Windows 7兼容性技术
+1. **CPU架构检测**
+   - 自动识别Intel 2-4代处理器
+   - 检测Haswell、Ivy Bridge、Sandy Bridge架构
+   - 根据CPU能力自动调整WebEngine参数
+
+2. **内存管理优化**
+   - 系统内存自动检测
+   - 低内存环境（≤4GB）启用保守模式
+   - JavaScript垃圾回收优化
+
+3. **Chrome/WebEngine参数优化**
+   ```
+   老旧CPU模式：
+   --no-sandbox --single-process --disable-webgl 
+   --disable-webgl2 --disable-3d-apis --force-cpu-draw 
+   --use-gl=disabled --disable-accelerated-video-processing
+   --disable-features=WebRTC --renderer-process-limit=1
+   --disable-smooth-scrolling
+   
+   标准Windows 7模式：
+   --no-sandbox --single-process --max_old_space_size=256
+   --disable-smooth-scrolling
+   ```
+
+## 构建说明
+
+### 开发环境配置
 ```bash
-# 安装 Homebrew（如未安装）
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+# 安装依赖
+# - Qt 5.9.9 (win32_msvc2015)
+# - Visual Studio 2015 或 Build Tools
+# - Windows SDK 8.1
 
-# 安装 Qt5 和 CMake
-brew install qt@5 cmake
-
-# 设置 Qt 环境变量（可加入 ~/.zshrc 或 ~/.bash_profile）
-export PATH="/usr/local/opt/qt@5/bin:$PATH"
-export CMAKE_PREFIX_PATH="/usr/local/opt/qt@5/lib/cmake:$CMAKE_PREFIX_PATH"
-```
-
-#### Ubuntu/Linux/麒麟
-```bash
-sudo apt update
-sudo apt install qtbase5-dev qtwebengine5-dev cmake build-essential
-```
-
-#### Windows
-- 推荐使用 [Qt 官方安装器](https://download.qt.io/official_releases/online_installers/)
-- 选择 Qt5/Qt6 + QtWebEngine + MinGW 或 MSVC 工具链
-- 安装 CMake（[下载地址](https://cmake.org/download/)）
-- 安装 NSIS（[下载地址](https://nsis.sourceforge.io/Download)）用于创建安装程序
-
-### 3. 构建与运行
-```bash
+# 构建项目
 cd zdf-exam-desktop
 mkdir build && cd build
-cmake ..
-cmake --build .
+cmake .. -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release
+nmake
 ```
 
-### 4. 退出说明
-- 按 F10 弹出密码输入框，输入 123456 可安全退出
+### 部署配置
+```bash
+# Qt依赖部署
+windeployqt --dir deploy zdf-exam-desktop.exe
 
-### 5. Windows 7 兼容性优化
+# 复制资源文件
+copy resources\*.* deploy\resources\
+```
 
-本程序针对Windows 7低内存环境和老旧CPU进行了特殊优化：
+## 配置文件说明
 
-#### 自动检测功能
-- 自动检测Windows 7系统版本
-- 自动检测系统内存大小
-- **新增CPU架构检测**，支持识别Haswell及更早的CPU架构
-- 在4GB及以下内存或老旧CPU环境下自动启用超保守模式
-
-#### CPU架构兼容性
-程序能够检测并优化以下CPU架构：
-- **Haswell架构** (第四代Intel Core，如i7-4790)
-- **Ivy Bridge架构** (第三代Intel Core，如i7-3770)
-- **Sandy Bridge架构** (第二代Intel Core，如i7-2600)
-
-这些老旧CPU缺少某些现代WebEngine/Chromium需要的指令集支持，可能导致：
-- 启动黑屏问题
-- 运行缓慢
-- 不稳定
-
-#### 针对老旧CPU的优化措施
-- 禁用WebGL和WebGL2
-- 禁用所有3D API
-- 强制使用CPU渲染
-- 禁用硬件加速视频处理
-- 禁用WebRTC功能
-- 使用最小的JavaScript堆空间限制
-
-#### 渐进式启动
-- 在低内存或老旧CPU环境下，程序首先显示加载界面
-- 延迟3秒后再加载实际网页内容
-- 避免用户看到长时间黑屏，改善用户体验
-
-#### 内存优化措施
-- 启用单进程模式，减少内存占用
-- 禁用不必要的Chrome功能和扩展
-- 设置更严格的内存限制（128MB堆空间）
-- 定期监控内存使用并触发垃圾回收
-
-#### 配置选项
-可在 `config.json` 中自定义低内存模式设置：
+### config.json基本配置
 ```json
 {
+  "url": "http://stu.sdzdf.com/",
+  "exitPassword": "123456",
+  "appName": "zdf-exam-desktop",
+  "disableHardwareAcceleration": false,
   "lowMemoryMode": {
-    "enabled": "auto",              // auto/true/false
-    "memoryThresholdMB": 4096,      // 内存检测阈值
-    "progressiveLoading": true,     // 是否启用渐进式加载
-    "progressiveLoadingDelay": 3000 // 延迟加载时间(毫秒)
+    "enabled": true,
+    "threshold": 4096,
+    "progressiveLoading": true,
+    "progressiveLoadingDelay": 3000
   }
 }
 ```
 
-#### 日志记录
-- 程序会在日志中记录CPU型号和架构信息
-- 记录系统内存信息
-- 记录是否启用了超保守模式
-- 记录内存监控和回收情况
+### 低内存模式参数
+- `enabled`: 是否启用低内存模式
+- `threshold`: 内存阈值（MB），低于此值启用优化
+- `progressiveLoading`: 渐进式加载，避免黑屏
+- `progressiveLoadingDelay`: 加载延迟时间（毫秒）
 
-#### 支持的问题解决
-此更新主要解决了在老旧硬件（特别是四代i7-4790）上出现的：
-1. **启动黑屏**问题
-2. **启动速度极慢**问题
-3. **运行不稳定**问题 
+## 日志系统
 
-## Windows 打包说明
+### 日志文件类型
+- `app.log`: 应用程序运行日志
+- `config.log`: 配置文件操作日志  
+- `exit.log`: F10退出尝试记录
+- `startup.log`: 启动过程日志
 
-### 打包步骤
+### 操作记录格式
+```
+[2025-01-14 10:30:45] 热键退出尝试: 密码正确，退出
+[2025-01-14 10:25:30] 热键退出尝试: 密码错误
+[2025-01-14 10:20:15] 热键退出尝试: 取消输入
+```
 
-1. 确保已安装以下软件：
-   - Qt 5.12 或更高版本
-   - CMake 3.14 或更高版本
-   - Visual Studio 2019 或 MinGW
-   - [NSIS](https://nsis.sourceforge.io/Download) (Nullsoft Scriptable Install System)
+## 兼容性测试
 
-2. 设置环境变量：
-   - 设置 QTDIR 环境变量指向您的 Qt 安装目录
-   - 示例: `set QTDIR=C:\Qt\5.15.2\msvc2019_64`
+### 测试环境
+- **Windows 7 Ultimate SP1 (x86)**
+  - Intel i7-4790 (Haswell)
+  - 2GB RAM
+  - ✅ 正常运行，启用超保守模式
 
-3. 打开命令提示符或 PowerShell，进入项目目录，运行打包脚本：
-   ```
-   cd zdf-exam-desktop
-   .\build-windows.bat
-   ```
+- **Windows 10 (x64)**
+  - Intel i7-6700 (Skylake)  
+  - 8GB RAM
+  - ✅ 正常运行，标准模式
 
-4. 脚本会根据系统环境生成安装包：
-   - `zdf-exam-desktop-setup.exe` (64位系统)
-   - `zdf-exam-desktop-setup-x86.exe` (适用于32位系统)
+### 已知问题解决
+1. **黑屏问题**: 通过渐进式加载和CPU架构检测解决
+2. **启动缓慢**: Chrome参数优化，减少渲染负载
+3. **CPU占用高**: 定时器频率优化，内存检查间隔增加
 
-## 安装包说明
+## 版本历史
 
-生成的 Windows 安装包具有以下特性：
+### v1.2.1 (2025-01-14)
+- 🐛 修复变量重定义编译错误
+- ⚡ CPU性能优化：减少定时器频率和内存检查频率
+- 🔧 简化Chrome参数，提升老旧硬件兼容性
+- 📝 完善兼容性文档
 
-1. 支持 32 位和 64 位 Windows 系统
-2. 自动安装所有必要的 Qt 依赖库
-3. 创建开始菜单和桌面快捷方式
-4. 提供标准的卸载功能
-5. 安装路径：
-   - `C:\Program Files\zdf-exam-desktop` (64位系统)
-   - `C:\Program Files (x86)\zdf-exam-desktop` (32位系统) 
+### v1.2.0 (2025-01-14)
+- 🎯 新增CPU架构自动检测
+- 🛡️ Windows 7 + 老旧CPU全面兼容性支持
+- 💾 低内存环境优化
+- 📊 系统硬件信息日志记录
 
-## 编译问题修复记录
+### v1.1.0 (2025-01-14)
+- 🔄 新增渐进式加载，解决黑屏问题
+- 💾 低内存模式支持
+- 📈 内存监控和垃圾回收机制
+- 🚀 Windows 7基础兼容性优化
 
-### 2024年6月修复 - QWebEngineSettings和Logger问题
+### v1.0.0 (2025-01-13)
+- 🎉 初始版本发布
+- 🔒 基础安全控制功能
+- 📝 操作日志记录
+- 🚫 快捷键拦截机制
 
-1. **缺少头文件修复**
-   - 添加 QWebEngineSettings 头文件
-   - 添加 QWebEnginePage 头文件
-   - 添加 QWebEngineProfile 头文件
+## 故障排除
 
-2. **Logger类修改**
-   - Logger类现在继承自QObject
-   - 添加Q_OBJECT宏以支持信号槽
-   - 将flushAllLogBuffers函数移入timerFlushLogBuffers槽函数
-   - 修复connect语法，使用恰当的父子关系
-   
-3. **QWebEngineSettings用法修改**
-   - 从page()->settings()改为使用QWebEngineSettings::globalSettings()
-   
-4. **弃用API修复**
-   - 将Qt::AA_MacPluginApplication替换为Qt::AA_PluginApplication
-   
-5. **构建系统改进**
-   - 在CMake中添加Qt5::Core和Qt5::WebEngine库依赖 
+### 常见问题
+
+**Q: Windows 7上出现黑屏？**
+A: 程序会自动检测硬件并启用兼容模式。如仍有问题，请检查：
+- 是否为老旧CPU（i7-4xxx及更早）
+- 内存是否不足4GB
+- 查看日志确认是否启用了超保守模式
+
+**Q: CPU占用率过高？**  
+A: v1.2.1已优化CPU使用：
+- 定时器频率从1.5秒调整为3秒
+- 内存检查从每15秒改为每60秒
+- 减少不必要的系统调用
+
+**Q: 程序启动慢？**
+A: 老旧硬件上启动时间较长是正常现象：
+- 渐进式加载会延迟3秒显示内容
+- Chrome引擎初始化需要时间
+- 可通过调整`progressiveLoadingDelay`参数优化
+
+## 许可证
+本项目采用 MIT 许可证。详见 [LICENSE](LICENSE.txt) 文件。
+
+## 技术支持
+如遇问题，请查看日志文件并提供以下信息：
+- 操作系统版本和架构
+- CPU型号和内存大小  
+- 错误日志内容
+- 复现步骤 

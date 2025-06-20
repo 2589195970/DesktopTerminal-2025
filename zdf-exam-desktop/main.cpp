@@ -484,8 +484,8 @@ int main(int argc,char *argv[]){
 
     // Windows 7 WebEngine兼容性：在QApplication创建前设置环境变量
 #ifdef Q_OS_WIN
-    QString ver = QSysInfo::productVersion();
-    bool oldWin = ver.startsWith("6.0")||ver.startsWith("6.1")||ver.startsWith("5.");
+    QString winVer = QSysInfo::productVersion();
+    bool isOldWin = winVer.startsWith("6.0")||winVer.startsWith("6.1")||winVer.startsWith("5.");
     
     // 检测系统内存大小（以MB为单位）
     MEMORYSTATUSEX memStatus;
@@ -522,7 +522,7 @@ int main(int argc,char *argv[]){
         isOldCpu = true;
     }
     
-    if(oldWin) {
+    if(isOldWin) {
         // 创建Logger输出信息（这里Logger还没初始化，用printf）
         printf("检测到Windows 7系统\n");
         printf("CPU信息：%s\n", cpuInfo.toLocal8Bit().constData());
@@ -535,27 +535,15 @@ int main(int argc,char *argv[]){
         qputenv("QT_OPENGL", "software");
         
         QString chromiumFlags = "--no-sandbox --single-process --disable-dev-shm-usage "
-                              "--disable-extensions --disable-plugins --disable-background-timer-throttling "
-                              "--memory-pressure-off ";
+                              "--disable-extensions --disable-plugins --disable-background-timer-throttling ";
         
         if(lowMemory || isOldCpu) {
             // 超保守模式：针对低内存或老旧CPU的严格优化
             printf("启用超保守模式\n");
-            chromiumFlags += "--max_old_space_size=128 --max-new-space-size=16 "
-                           "--disable-background-networking --disable-background-sync "
-                           "--disable-client-side-phishing-detection --disable-component-update "
-                           "--disable-default-apps --disable-hang-monitor --disable-prompt-on-repost "
-                           "--disable-web-security --aggressive-cache-discard "
-                           "--max-active-webgl-contexts=0 --disable-accelerated-2d-canvas "
-                           "--disable-accelerated-jpeg-decoding --disable-accelerated-mjpeg-decode "
-                           "--disable-accelerated-video-decode --reduce-user-agent-minor-version "
-                           "--disable-features=VizDisplayCompositor,AudioServiceOutOfProcess,WebRTC "
-                           "--disable-webgl --disable-webgl2 --disable-3d-apis "
-                           "--disable-accelerated-video-processing --force-cpu-draw "
-                           "--disable-software-rasterizer --use-gl=disabled "
-                           "--renderer-process-limit=1 --max-gum-fps=30 "
-                           "--disable-smooth-scrolling --disable-threaded-scrolling "
-                           "--disable-checker-imaging --disable-new-content-rendering-timeout";
+            chromiumFlags += "--max_old_space_size=128 --disable-webgl --disable-webgl2 "
+                           "--disable-3d-apis --force-cpu-draw --use-gl=disabled "
+                           "--disable-accelerated-video-processing --disable-features=WebRTC "
+                           "--renderer-process-limit=1 --disable-smooth-scrolling";
         } else {
             // 标准Windows 7模式
             printf("启用标准Windows 7兼容模式\n");
