@@ -3,5 +3,12 @@
   "exitPassword": "sdzdf@2025",
   "appName": "智多分机考桌面端",
   "iconPath": "logo.svg",
-  "appVersion": "1.0.0"
+  "appVersion": "1.0.0",
+  "disableHardwareAcceleration": false,
+  "lowMemoryMode": {
+    "enabled": "auto",
+    "memoryThresholdMB": 4096,
+    "progressiveLoading": true,
+    "progressiveLoadingDelay": 3000
+  }
 } 

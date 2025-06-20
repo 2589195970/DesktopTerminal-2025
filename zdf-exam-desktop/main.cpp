@@ -165,11 +165,38 @@ public:
     QString getAppName()      const { return config.value("appName").toString("zdf-exam-desktop"); }
     bool    isHardwareAccelerationDisabled() const { return config.value("disableHardwareAcceleration").toBool(false); }
     QString getActualConfigPath() const { return actualConfigPath; }
+    
+    // 低内存模式相关配置
+    bool isLowMemoryModeEnabled() const {
+        QJsonObject lowMemConfig = config.value("lowMemoryMode").toObject();
+        QString enabled = lowMemConfig.value("enabled").toString("auto");
+        return enabled == "true" || enabled == "auto";
+    }
+    int getLowMemoryThreshold() const {
+        QJsonObject lowMemConfig = config.value("lowMemoryMode").toObject();
+        return lowMemConfig.value("memoryThresholdMB").toInt(4096);
+    }
+    bool isProgressiveLoadingEnabled() const {
+        QJsonObject lowMemConfig = config.value("lowMemoryMode").toObject();
+        return lowMemConfig.value("progressiveLoading").toBool(true);
+    }
+    int getProgressiveLoadingDelay() const {
+        QJsonObject lowMemConfig = config.value("lowMemoryMode").toObject();
+        return lowMemConfig.value("progressiveLoadingDelay").toInt(3000);
+    }
 
     bool createDefaultConfig(const QString &path){
+        QJsonObject lowMemConfig{
+            {"enabled", "auto"},
+            {"memoryThresholdMB", 4096},
+            {"progressiveLoading", true},
+            {"progressiveLoadingDelay", 3000}
+        };
+        
         QJsonObject def{{"url","http://stu.sdzdf.com/"},{"exitPassword","sdzdf@2025"},
                         {"appName","智多分机考桌面端"},{"iconPath","logo.svg"},
-                        {"appVersion","1.0.0"},{"disableHardwareAcceleration",false}};
+                        {"appVersion","1.0.0"},{"disableHardwareAcceleration",false},
+                        {"lowMemoryMode", lowMemConfig}};
         QFileInfo fi(path); QDir d=fi.dir(); if(!d.exists()&&!d.mkpath(".")) return false;
         QFile f(path); if(!f.open(QIODevice::WriteOnly)) return false;
         f.write(QJsonDocument(def).toJson()); f.close(); return true;
@@ -221,7 +248,17 @@ public:
         // Windows 7最兼容设置：强制禁用所有可能导致问题的功能
 #ifdef Q_OS_WIN
         if(oldWin) {
-            Logger::instance().appEvent("检测到Windows 7系统，启用最大兼容模式", L_INFO);
+            // 检测内存并记录系统信息
+            MEMORYSTATUSEX memStatus;
+            memStatus.dwLength = sizeof(memStatus);
+            GlobalMemoryStatusEx(&memStatus);
+            DWORDLONG totalMemoryMB = memStatus.ullTotalPhys / (1024 * 1024);
+            
+            Logger::instance().appEvent(QString("检测到Windows 7系统，总内存：%1MB，启用最大兼容模式").arg(totalMemoryMB), L_INFO);
+            if(totalMemoryMB <= 4096) {
+                Logger::instance().appEvent("检测到低内存环境，已启用超保守优化模式", L_WARNING);
+            }
+            
             // 强制禁用所有硬件加速功能
             settings->setAttribute(QWebEngineSettings::WebGLEnabled, false);
             settings->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled, false);
@@ -230,8 +267,46 @@ public:
         }
 #endif
 
-        load(QUrl(ConfigManager::instance().getUrl()));
-        Logger::instance().appEvent("程序启动");
+        // 检查是否为低内存Windows 7环境，决定是否使用渐进式启动
+        bool useProgressiveLoading = false;
+#ifdef Q_OS_WIN
+        QString ver=QSysInfo::productVersion();
+        bool oldWin = ver.startsWith("6.0")||ver.startsWith("6.1")||ver.startsWith("5.");
+        if(oldWin) {
+            MEMORYSTATUSEX memStatus;
+            memStatus.dwLength = sizeof(memStatus);
+            GlobalMemoryStatusEx(&memStatus);
+            DWORDLONG totalMemoryMB = memStatus.ullTotalPhys / (1024 * 1024);
+            useProgressiveLoading = totalMemoryMB <= 4096;
+        }
+#endif
+
+        if(useProgressiveLoading) {
+            // 渐进式启动：先显示加载页面
+            setHtml("<html><head><style>"
+                   "body{background:#1a1a1a;color:#fff;font-family:Arial;text-align:center;padding-top:200px;}"
+                   ".loader{font-size:24px;margin-bottom:20px;}"
+                   ".spinner{border:4px solid #333;border-top:4px solid #fff;border-radius:50%;"
+                   "width:40px;height:40px;animation:spin 1s linear infinite;margin:20px auto;}"
+                   "@keyframes spin{0%{transform:rotate(0deg);} 100%{transform:rotate(360deg);}}"
+                   "</style></head><body>"
+                   "<div class='loader'>智多分机考桌面端</div>"
+                   "<div class='spinner'></div>"
+                   "<div>正在启动中，请稍候...</div>"
+                   "</body></html>");
+            
+            Logger::instance().appEvent("程序启动 - 使用渐进式加载模式", L_INFO);
+            
+            // 延迟加载实际页面，给WebEngine更多初始化时间
+            QTimer::singleShot(3000, this, [this](){
+                load(QUrl(ConfigManager::instance().getUrl()));
+                Logger::instance().appEvent("延迟加载完成，正在访问考试页面", L_INFO);
+            });
+        } else {
+            // 标准启动
+            load(QUrl(ConfigManager::instance().getUrl()));
+            Logger::instance().appEvent("程序启动");
+        }
 
         exitHotkeyF10 = new QHotkey(QKeySequence("F10"),true,this);
         exitHotkeyBackslash = new QHotkey(QKeySequence("\\"),true,this);
@@ -245,6 +320,33 @@ public:
         connect(maintenanceTimer,&QTimer::timeout,this,[this](){
             if(needFocusCheck && !isActiveWindow()){ raise(); activateWindow(); }
             if(needFullscreenCheck && windowState()!=Qt::WindowFullScreen){ setWindowState(Qt::WindowFullScreen); showFullScreen(); }
+            
+            // 低内存环境下的内存监控和回收
+#ifdef Q_OS_WIN
+            static int memoryCheckCounter = 0;
+            if(++memoryCheckCounter >= 10) { // 每15秒检查一次内存（1.5s * 10）
+                memoryCheckCounter = 0;
+                
+                MEMORYSTATUSEX memStatus;
+                memStatus.dwLength = sizeof(memStatus);
+                GlobalMemoryStatusEx(&memStatus);
+                DWORDLONG totalMemoryMB = memStatus.ullTotalPhys / (1024 * 1024);
+                DWORDLONG availMemoryMB = memStatus.ullAvailPhys / (1024 * 1024);
+                
+                if(totalMemoryMB <= 4096 && availMemoryMB < 500) { // 低内存且可用内存少于500MB
+                    Logger::instance().appEvent(QString("检测到内存不足：总内存%1MB，可用%2MB，触发垃圾回收")
+                                               .arg(totalMemoryMB).arg(availMemoryMB), L_WARNING);
+                    
+                    // 触发JavaScript垃圾回收
+                    this->page()->runJavaScript("if(window.gc) window.gc(); "
+                                               "if(window.CollectGarbage) window.CollectGarbage();");
+                    
+                    // 清理Qt对象缓存
+                    QCoreApplication::sendPostedEvents();
+                    QCoreApplication::processEvents();
+                }
+            }
+#endif
         });
         maintenanceTimer->start(1500);
 
@@ -359,22 +461,42 @@ int main(int argc,char *argv[]){
 #ifdef Q_OS_WIN
     QString ver = QSysInfo::productVersion();
     bool oldWin = ver.startsWith("6.0")||ver.startsWith("6.1")||ver.startsWith("5.");
+    
+    // 检测系统内存大小（以MB为单位）
+    MEMORYSTATUSEX memStatus;
+    memStatus.dwLength = sizeof(memStatus);
+    GlobalMemoryStatusEx(&memStatus);
+    DWORDLONG totalMemoryMB = memStatus.ullTotalPhys / (1024 * 1024);
+    bool lowMemory = totalMemoryMB <= 4096; // 4GB及以下视为低内存
+    
     if(oldWin) {
         // Windows 7最兼容配置：只使用最基础、最稳定的设置
         qputenv("QTWEBENGINE_DISABLE_GPU", "1");
         qputenv("QTWEBENGINE_DISABLE_SANDBOX", "1");
         qputenv("QT_OPENGL", "software");
         
-        // 针对0x40000015异常和低内存环境的优化配置
-        qputenv("QTWEBENGINE_CHROMIUM_FLAGS", 
-            "--no-sandbox "
-            "--single-process "
-            "--disable-dev-shm-usage "
-            "--disable-extensions "
-            "--disable-plugins "
-            "--disable-background-timer-throttling "
-            "--memory-pressure-off "
-            "--max_old_space_size=256");
+        QString chromiumFlags = "--no-sandbox --single-process --disable-dev-shm-usage "
+                              "--disable-extensions --disable-plugins --disable-background-timer-throttling "
+                              "--memory-pressure-off ";
+        
+        if(lowMemory) {
+            // 超保守模式：针对2GB-4GB内存的严格优化
+            chromiumFlags += "--max_old_space_size=128 --max-new-space-size=16 "
+                           "--disable-background-networking --disable-background-sync "
+                           "--disable-client-side-phishing-detection --disable-component-update "
+                           "--disable-default-apps --disable-hang-monitor --disable-prompt-on-repost "
+                           "--disable-web-security --aggressive-cache-discard --memory-pressure-off "
+                           "--max-active-webgl-contexts=0 --disable-accelerated-2d-canvas "
+                           "--disable-accelerated-jpeg-decoding --disable-accelerated-mjpeg-decode "
+                           "--disable-accelerated-video-decode --reduce-user-agent-minor-version "
+                           "--disable-features=VizDisplayCompositor,AudioServiceOutOfProcess "
+                           "--renderer-process-limit=1 --max-gum-fps=15";
+        } else {
+            // 标准Windows 7模式
+            chromiumFlags += "--max_old_space_size=256";
+        }
+        
+        qputenv("QTWEBENGINE_CHROMIUM_FLAGS", chromiumFlags.toLocal8Bit());
     }
 #endif
 
