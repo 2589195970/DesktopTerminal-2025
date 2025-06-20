@@ -117,7 +117,9 @@ public:
         errorEvent(QString("%1: %2").arg(t).arg(m), L_ERROR);
     }
     bool getPassword(QWidget* p,const QString&t,const QString&l,QString&pwd){
-        bool ok; pwd=QInputDialog::getText(p,t,l,QLineEdit::Password,"",&ok"); return ok;
+        bool ok; 
+        pwd=QInputDialog::getText(p,t,l,QLineEdit::Password,"",&ok); 
+        return ok;
     }
     
     // 系统信息收集（用于问题诊断）
@@ -307,9 +309,9 @@ public:
             Logger::instance().errorEvent(errorMsg, L_ERROR);
             Logger::instance().collectSystemInfo(); // 收集系统信息以便诊断
             Logger::instance().showCriticalError(this, "致命错误", 
-                errorMsg + "\n\n这通常是硬件加速、GPU驱动或Qt版本兼容性问题。" +
-                "\n建议检查：\n1. 更新显卡驱动\n2. 在config.json中设置disableHardwareAcceleration=true" +
-                "\n3. 检查error.log和system.log文件获取详细信息。");
+                errorMsg + "\n\n这通常是硬件加速、GPU驱动或Qt版本兼容性问题。\n"
+                "建议检查：\n1. 更新显卡驱动\n2. 在config.json中设置disableHardwareAcceleration=true\n"
+                "3. 检查error.log和system.log文件获取详细信息。");
             Logger::instance().shutdown(); // 确保日志被写入
             QApplication::quit();
             return;
@@ -605,14 +607,14 @@ int main(int argc,char *argv[]){
         handleFatalError(errorMsg);
         return 1;
     } catch (...) {
-        QString errorMsg = "程序启动过程中发生未知异常，这通常是由于:\n"
+        QString errorMsg = QString("程序启动过程中发生未知异常，这通常是由于:\n"
                           "1. QtWebEngine无法初始化（GPU/显卡驱动问题）\n"
                           "2. 系统资源不足（内存/CPU）\n"
                           "3. 虚拟机环境兼容性问题\n\n"
                           "建议检查：\n"
                           "- 更新显卡驱动\n"
                           "- 增加虚拟机内存分配\n"
-                          "- 确保config.json中disableHardwareAcceleration设为true";
+                          "- 确保config.json中disableHardwareAcceleration设为true");
         handleFatalError(errorMsg);
         return 1;
     }
