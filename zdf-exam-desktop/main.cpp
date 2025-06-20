@@ -113,7 +113,9 @@ private:
         QTextCodec::setCodecForLocale(QTextCodec::codecForName("UTF-8"));
         m_flushTimer=new QTimer();
         QObject::connect(m_flushTimer,&QTimer::timeout,[this](){flushAllLogBuffers();});
-        m_flushTimer->start(5000);
+        
+        // 针对1核2线程环境：大幅减少定时器频率，避免线程竞争
+        m_flushTimer->start(30000); // 从5秒改为30秒
     }
     Logger(const Logger&)=delete; Logger& operator=(const Logger&)=delete;
     ~Logger(){shutdown();}
@@ -327,7 +329,13 @@ public:
             Logger::instance().appEvent("程序启动 - 使用渐进式加载模式", L_INFO);
             
             // 延迟加载实际页面，给WebEngine更多初始化时间
-            QTimer::singleShot(3000, this, [this](){
+            // 1核2线程环境下延长等待时间，确保系统稳定
+            int delayTime = useProgressiveLoading ? ConfigManager::instance().getProgressiveLoadingDelay() : 3000;
+            if(lowMemory || isOldCpu) {
+                delayTime = 8000; // 超保守模式：等待8秒
+            }
+            
+            QTimer::singleShot(delayTime, this, [this](){
                 load(QUrl(ConfigManager::instance().getUrl()));
                 Logger::instance().appEvent("延迟加载完成，正在访问考试页面", L_INFO);
             });
@@ -347,13 +355,30 @@ public:
 
         maintenanceTimer=new QTimer(this);
         connect(maintenanceTimer,&QTimer::timeout,this,[this](){
-            if(needFocusCheck && !isActiveWindow()){ raise(); activateWindow(); }
-            if(needFullscreenCheck && windowState()!=Qt::WindowFullScreen){ setWindowState(Qt::WindowFullScreen); showFullScreen(); }
+            // 针对1核2线程环境：减少检查频率，避免CPU竞争
+            static int checkCounter = 0;
+            checkCounter++;
             
-            // 低内存环境下的内存监控和回收（频率降低以减少CPU占用）
+            // 焦点检查：每3次才检查一次（即每15秒）
+            if(needFocusCheck && checkCounter % 3 == 1) {
+                if(!isActiveWindow()){ 
+                    raise(); 
+                    activateWindow(); 
+                }
+            }
+            
+            // 全屏检查：每3次才检查一次（即每15秒）
+            if(needFullscreenCheck && checkCounter % 3 == 2) {
+                if(windowState()!=Qt::WindowFullScreen){ 
+                    setWindowState(Qt::WindowFullScreen); 
+                    showFullScreen(); 
+                }
+            }
+            
+            // 低内存环境下的内存监控和回收（频率大幅降低以减少CPU占用）
 #ifdef Q_OS_WIN
             static int memoryCheckCounter = 0;
-            if(++memoryCheckCounter >= 20) { // 每60秒检查一次内存（3s * 20）
+            if(++memoryCheckCounter >= 40) { // 每200秒检查一次内存（5s * 40）
                 memoryCheckCounter = 0;
                 
                 MEMORYSTATUSEX memStatus;
@@ -362,18 +387,18 @@ public:
                 DWORDLONG totalMemoryMB = memStatus.ullTotalPhys / (1024 * 1024);
                 DWORDLONG availMemoryMB = memStatus.ullAvailPhys / (1024 * 1024);
                 
-                if(totalMemoryMB <= 4096 && availMemoryMB < 500) { // 低内存且可用内存少于500MB
+                if(totalMemoryMB <= 4096 && availMemoryMB < 400) { // 低内存且可用内存少于400MB
                     Logger::instance().appEvent(QString("检测到内存不足：总内存%1MB，可用%2MB，触发垃圾回收")
                                                .arg(totalMemoryMB).arg(availMemoryMB), L_WARNING);
                     
-                    // 触发JavaScript垃圾回收（减少频繁调用）
+                    // 触发JavaScript垃圾回收（极低频率调用）
                     this->page()->runJavaScript("if(window.gc) window.gc(); "
                                                "if(window.CollectGarbage) window.CollectGarbage();");
                 }
             }
 #endif
         });
-        maintenanceTimer->start(3000); // 减少频率：从1.5秒改为3秒
+        maintenanceTimer->start(5000); // 从3秒改为5秒，进一步减少CPU占用
 
         setContextMenuPolicy(Qt::NoContextMenu);
 
@@ -549,6 +574,12 @@ int main(int argc,char *argv[]){
             printf("启用标准Windows 7兼容模式\n");
             chromiumFlags += "--max_old_space_size=256 --disable-smooth-scrolling";
         }
+        
+        // 1核2线程专用优化：强制限制线程数和进程数
+        printf("检测到低核心数环境，启用线程优化\n");
+        chromiumFlags += " --max-threads=2 --renderer-process-limit=1 --disable-background-networking "
+                        "--disable-background-timer-throttling --disable-renderer-backgrounding "
+                        "--disable-backgrounding-occluded-windows --disable-ipc-flooding-protection";
         
         qputenv("QTWEBENGINE_CHROMIUM_FLAGS", chromiumFlags.toLocal8Bit());
     }
