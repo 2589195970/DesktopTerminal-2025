@@ -197,7 +197,6 @@ public:
         settings->setAttribute(QWebEngineSettings::AutoLoadImages,true);
         settings->setAttribute(QWebEngineSettings::PluginsEnabled,true);
         settings->setAttribute(QWebEngineSettings::LocalStorageEnabled,true);
-        settings->setAttribute(QWebEngineSettings::PlaybackRequiresUserGesture,false);
         settings->setAttribute(QWebEngineSettings::JavascriptCanOpenWindows,true);
 
         bool hw=!ConfigManager::instance().isHardwareAccelerationDisabled();
@@ -209,14 +208,15 @@ public:
             // Windows 7特殊配置：强制禁用可能导致崩溃的功能
             settings->setAttribute(QWebEngineSettings::PluginsEnabled,false);
             settings->setAttribute(QWebEngineSettings::JavascriptCanOpenWindows,false);
-            settings->setAttribute(QWebEngineSettings::PlaybackRequiresUserGesture,true);
             Logger::instance().appEvent("检测到Windows 7系统，启用兼容模式", L_INFO);
         }
 #endif
         settings->setAttribute(QWebEngineSettings::WebGLEnabled,hw);
         settings->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled,hw);
-        settings->setAttribute(QWebEngineSettings::ScreenCaptureEnabled,false);
-        settings->setAttribute(QWebEngineSettings::WebRTCPublicInterfacesOnly,true);
+        
+        // Qt 5.9.9中没有这些属性，移除以确保兼容性
+        // settings->setAttribute(QWebEngineSettings::ScreenCaptureEnabled,false);
+        // settings->setAttribute(QWebEngineSettings::WebRTCPublicInterfacesOnly,true);
         
         // Windows 7最兼容设置：强制禁用所有可能导致问题的功能
 #ifdef Q_OS_WIN
