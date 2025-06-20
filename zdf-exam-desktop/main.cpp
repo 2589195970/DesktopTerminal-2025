@@ -299,9 +299,9 @@ public:
         // 检查是否为低内存Windows 7环境，决定是否使用渐进式启动
         bool useProgressiveLoading = false;
 #ifdef Q_OS_WIN
-        QString ver=QSysInfo::productVersion();
-        bool oldWin = ver.startsWith("6.0")||ver.startsWith("6.1")||ver.startsWith("5.");
-        if(oldWin) {
+        QString winVer=QSysInfo::productVersion();
+        bool isOldWin = winVer.startsWith("6.0")||winVer.startsWith("6.1")||winVer.startsWith("5.");
+        if(isOldWin) {
             MEMORYSTATUSEX memStatus;
             memStatus.dwLength = sizeof(memStatus);
             GlobalMemoryStatusEx(&memStatus);
