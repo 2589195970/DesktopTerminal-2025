@@ -114,8 +114,13 @@ private:
         m_flushTimer=new QTimer();
         QObject::connect(m_flushTimer,&QTimer::timeout,[this](){flushAllLogBuffers();});
         
-        // 单核心单线程模式：极大减少定时器频率，避免阻塞主线程
-        m_flushTimer->start(60000); // 从30秒改为60秒（1分钟）
+        // 虚拟化环境优化：根据环境调整定时器频率
+        SystemInfo sysInfo = detectSystemInfo();
+        int flushInterval = 60000; // 默认1分钟
+        if(sysInfo.isVirtualized) {
+            flushInterval = 120000; // 虚拟化环境：2分钟
+        }
+        m_flushTimer->start(flushInterval);
     }
     Logger(const Logger&)=delete; Logger& operator=(const Logger&)=delete;
     ~Logger(){shutdown();}
@@ -124,6 +129,72 @@ private:
     LogLevel m_logLevel;
     QTimer* m_flushTimer{};
 };
+
+// --------------------------- 系统信息检测 ---------------------------
+struct SystemInfo {
+    bool isOldWin = false;
+    bool lowMemory = false;
+    bool isOldCpu = false;
+    bool isVirtualized = false;
+    QString cpuInfo = "Unknown";
+#ifdef Q_OS_WIN
+    DWORDLONG totalMemoryMB = 0;
+#else
+    quint64 totalMemoryMB = 0;
+#endif
+};
+
+SystemInfo detectSystemInfo() {
+    SystemInfo info;
+    
+#ifdef Q_OS_WIN
+    // 检测Windows版本
+    QString winVer = QSysInfo::productVersion();
+    info.isOldWin = winVer.startsWith("6.0") || winVer.startsWith("6.1") || winVer.startsWith("5.");
+    
+    if(info.isOldWin) {
+        // 检测内存
+        MEMORYSTATUSEX memStatus;
+        memStatus.dwLength = sizeof(memStatus);
+        GlobalMemoryStatusEx(&memStatus);
+        info.totalMemoryMB = memStatus.ullTotalPhys / (1024 * 1024);
+        info.lowMemory = info.totalMemoryMB <= 4096;
+        
+        // 检测CPU信息（只执行一次）
+        HKEY hKey;
+        if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, 
+                          "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", 
+                          0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+            DWORD dataSize = 256;
+            char data[256];
+            if (RegQueryValueExA(hKey, "ProcessorNameString", NULL, NULL, 
+                                (LPBYTE)data, &dataSize) == ERROR_SUCCESS) {
+                info.cpuInfo = QString::fromLocal8Bit(data).trimmed();
+            }
+            RegCloseKey(hKey);
+        }
+        
+        // 检测是否为老旧CPU架构
+        QRegExp oldCpuPattern("\\b[iI][3-7]-[2-4]\\d{3}\\b");
+        if (info.cpuInfo.contains(oldCpuPattern) || 
+            info.cpuInfo.contains("Haswell", Qt::CaseInsensitive) ||
+            info.cpuInfo.contains("Ivy Bridge", Qt::CaseInsensitive) ||
+            info.cpuInfo.contains("Sandy Bridge", Qt::CaseInsensitive)) {
+            info.isOldCpu = true;
+        }
+        
+        // 检测是否为虚拟化环境
+        if (info.cpuInfo.contains("Virtual", Qt::CaseInsensitive) ||
+            info.cpuInfo.contains("QEMU", Qt::CaseInsensitive) ||
+            info.cpuInfo.contains("VMware", Qt::CaseInsensitive) ||
+            info.cpuInfo.contains("VirtualBox", Qt::CaseInsensitive)) {
+            info.isVirtualized = true;
+        }
+    }
+#endif
+    
+    return info;
+}
 
 // --------------------------- 配置管理 ---------------------------
 class ConfigManager {
@@ -228,18 +299,22 @@ public:
         settings->setAttribute(QWebEngineSettings::LocalStorageEnabled,true);
         settings->setAttribute(QWebEngineSettings::JavascriptCanOpenWindows,true);
 
-        bool hw=!ConfigManager::instance().isHardwareAccelerationDisabled();
-#ifdef Q_OS_WIN
-        QString sysVer=QSysInfo::productVersion();
-        bool isOldWin = sysVer.startsWith("6.0")||sysVer.startsWith("6.1")||sysVer.startsWith("5.");
-        if(isOldWin) {
-            hw=false;
+        // 获取系统信息（只检测一次）
+        SystemInfo sysInfo = detectSystemInfo();
+        bool hw = !ConfigManager::instance().isHardwareAccelerationDisabled();
+        
+        if(sysInfo.isOldWin) {
+            hw = false;
             // Windows 7特殊配置：强制禁用可能导致崩溃的功能
             settings->setAttribute(QWebEngineSettings::PluginsEnabled,false);
             settings->setAttribute(QWebEngineSettings::JavascriptCanOpenWindows,false);
             Logger::instance().appEvent("检测到Windows 7系统，启用兼容模式", L_INFO);
+            
+            if(sysInfo.isVirtualized) {
+                Logger::instance().appEvent(QString("检测到虚拟化环境 - CPU：%1，总内存：%2MB")
+                                          .arg(sysInfo.cpuInfo).arg(sysInfo.totalMemoryMB), L_WARNING);
+            }
         }
-#endif
         settings->setAttribute(QWebEngineSettings::WebGLEnabled,hw);
         settings->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled,hw);
         
@@ -247,47 +322,14 @@ public:
         // settings->setAttribute(QWebEngineSettings::ScreenCaptureEnabled,false);
         // settings->setAttribute(QWebEngineSettings::WebRTCPublicInterfacesOnly,true);
         
-        // Windows 7最兼容设置：强制禁用所有可能导致问题的功能
-#ifdef Q_OS_WIN
-        if(isOldWin) {
-            // 检测内存并记录系统信息
-            MEMORYSTATUSEX memStatus;
-            memStatus.dwLength = sizeof(memStatus);
-            GlobalMemoryStatusEx(&memStatus);
-            DWORDLONG totalMemoryMB = memStatus.ullTotalPhys / (1024 * 1024);
-            
-            // 重新获取CPU信息
-            QString cpuInfo = "Unknown";
-            bool isOldCpu = false;
-            HKEY hKey;
-            if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, 
-                              "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", 
-                              0, KEY_READ, &hKey) == ERROR_SUCCESS) {
-                DWORD dataSize = 256;
-                char data[256];
-                if (RegQueryValueExA(hKey, "ProcessorNameString", NULL, NULL, 
-                                    (LPBYTE)data, &dataSize) == ERROR_SUCCESS) {
-                    cpuInfo = QString::fromLocal8Bit(data).trimmed();
-                }
-                RegCloseKey(hKey);
-            }
-            
-            QRegExp oldCpuPattern("\\b[iI][3-7]-[2-4]\\d{3}\\b");
-            if (cpuInfo.contains(oldCpuPattern) || 
-                cpuInfo.contains("Haswell", Qt::CaseInsensitive) ||
-                cpuInfo.contains("Ivy Bridge", Qt::CaseInsensitive) ||
-                cpuInfo.contains("Sandy Bridge", Qt::CaseInsensitive)) {
-                isOldCpu = true;
-            }
-            
-            Logger::instance().appEvent(QString("检测到Windows 7系统 - CPU：%1，总内存：%2MB").arg(cpuInfo).arg(totalMemoryMB), L_INFO);
-            
-            if(isOldCpu) {
+        // Windows 7最兼容设置：基于系统信息禁用硬件加速功能
+        if(sysInfo.isOldWin) {
+            if(sysInfo.isOldCpu) {
                 Logger::instance().appEvent("检测到Haswell/Ivy Bridge/Sandy Bridge等老旧CPU架构，启用老旧硬件兼容模式", L_WARNING);
             }
             
-            if(totalMemoryMB <= 4096 || isOldCpu) {
-                Logger::instance().appEvent("检测到低内存或老旧CPU环境，已启用超保守优化模式", L_WARNING);
+            if(sysInfo.lowMemory || sysInfo.isOldCpu || sysInfo.isVirtualized) {
+                Logger::instance().appEvent("检测到低内存/老旧CPU/虚拟化环境，已启用超保守优化模式", L_WARNING);
             }
             
             // 强制禁用所有硬件加速功能
@@ -296,45 +338,9 @@ public:
             settings->setAttribute(QWebEngineSettings::PluginsEnabled, false);
             hw = false;
         }
-#endif
 
-        // 检查是否为低内存Windows 7环境，决定是否使用渐进式启动
-        bool useProgressiveLoading = false;
-        bool lowMemory = false;
-        bool isOldCpu = false;
-#ifdef Q_OS_WIN
-        if(isOldWin) {
-            MEMORYSTATUSEX memStatus;
-            memStatus.dwLength = sizeof(memStatus);
-            GlobalMemoryStatusEx(&memStatus);
-            DWORDLONG totalMemoryMB = memStatus.ullTotalPhys / (1024 * 1024);
-            useProgressiveLoading = totalMemoryMB <= 4096;
-            lowMemory = totalMemoryMB <= 4096;
-            
-            // 重新检测CPU信息
-            QString cpuInfo = "Unknown";
-            HKEY hKey;
-            if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, 
-                              "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", 
-                              0, KEY_READ, &hKey) == ERROR_SUCCESS) {
-                DWORD dataSize = 256;
-                char data[256];
-                if (RegQueryValueExA(hKey, "ProcessorNameString", NULL, NULL, 
-                                    (LPBYTE)data, &dataSize) == ERROR_SUCCESS) {
-                    cpuInfo = QString::fromLocal8Bit(data).trimmed();
-                }
-                RegCloseKey(hKey);
-            }
-            
-            QRegExp oldCpuPattern("\\b[iI][3-7]-[2-4]\\d{3}\\b");
-            if (cpuInfo.contains(oldCpuPattern) || 
-                cpuInfo.contains("Haswell", Qt::CaseInsensitive) ||
-                cpuInfo.contains("Ivy Bridge", Qt::CaseInsensitive) ||
-                cpuInfo.contains("Sandy Bridge", Qt::CaseInsensitive)) {
-                isOldCpu = true;
-            }
-        }
-#endif
+        // 基于已检测的系统信息决定启动策略
+        bool useProgressiveLoading = sysInfo.lowMemory || sysInfo.isOldCpu || sysInfo.isVirtualized;
 
         if(useProgressiveLoading) {
             // 渐进式启动：先显示加载页面
@@ -353,10 +359,17 @@ public:
             Logger::instance().appEvent("程序启动 - 使用渐进式加载模式", L_INFO);
             
             // 延迟加载实际页面，给WebEngine更多初始化时间
-            // 单核心单线程环境下延长等待时间，确保系统稳定
-            int delayTime = useProgressiveLoading ? ConfigManager::instance().getProgressiveLoadingDelay() : 3000;
-            if(lowMemory || isOldCpu) {
-                delayTime = 15000; // 超保守单线程模式：等待15秒
+            // 根据系统环境设置不同的延迟时间
+            int delayTime = 3000; // 默认3秒
+            
+            if(sysInfo.isVirtualized && (sysInfo.lowMemory || sysInfo.isOldCpu)) {
+                delayTime = 30000; // 虚拟化+低配置环境：等待30秒
+                Logger::instance().appEvent("检测到虚拟化低配置环境，启用超长延迟启动模式（30秒）", L_WARNING);
+            } else if(sysInfo.lowMemory || sysInfo.isOldCpu) {
+                delayTime = 15000; // 低配置环境：等待15秒
+                Logger::instance().appEvent("检测到低配置环境，启用延迟启动模式（15秒）", L_INFO);
+            } else if(useProgressiveLoading) {
+                delayTime = ConfigManager::instance().getProgressiveLoadingDelay();
             }
             
             QTimer::singleShot(delayTime, this, [this](){
@@ -378,51 +391,59 @@ public:
         setWindowState(Qt::WindowFullScreen); showFullScreen();
 
         maintenanceTimer=new QTimer(this);
-        connect(maintenanceTimer,&QTimer::timeout,this,[this](){
-            // 单核心单线程模式：进一步减少检查频率，避免阻塞主线程
+        connect(maintenanceTimer,&QTimer::timeout,this,[this, sysInfo](){
+            // 虚拟化环境优化：根据环境调整检查频率
             static int checkCounter = 0;
             checkCounter++;
             
-            // 焦点检查：每6次才检查一次（即每60秒）
-            if(needFocusCheck && checkCounter % 6 == 1) {
+            // 根据环境设置检查频率
+            int focusCheckInterval = sysInfo.isVirtualized ? 12 : 6;  // 虚拟化环境：2分钟，其他：1分钟
+            int fullscreenCheckInterval = sysInfo.isVirtualized ? 12 : 6;
+            int memoryCheckInterval = sysInfo.isVirtualized ? 120 : 60; // 虚拟化环境：20分钟，其他：10分钟
+            
+            // 焦点检查
+            if(needFocusCheck && checkCounter % focusCheckInterval == 1) {
                 if(!isActiveWindow()){ 
                     raise(); 
                     activateWindow(); 
                 }
             }
             
-            // 全屏检查：每6次才检查一次（即每60秒）
-            if(needFullscreenCheck && checkCounter % 6 == 3) {
+            // 全屏检查
+            if(needFullscreenCheck && checkCounter % fullscreenCheckInterval == 3) {
                 if(windowState()!=Qt::WindowFullScreen){ 
                     setWindowState(Qt::WindowFullScreen); 
                     showFullScreen(); 
                 }
             }
             
-            // 低内存环境下的内存监控和回收（频率极大降低以减少CPU占用）
+            // 内存监控（仅在低内存环境下启用）
 #ifdef Q_OS_WIN
-            static int memoryCheckCounter = 0;
-            if(++memoryCheckCounter >= 60) { // 每600秒检查一次内存（10分钟一次）
-                memoryCheckCounter = 0;
-                
-                MEMORYSTATUSEX memStatus;
-                memStatus.dwLength = sizeof(memStatus);
-                GlobalMemoryStatusEx(&memStatus);
-                DWORDLONG totalMemoryMB = memStatus.ullTotalPhys / (1024 * 1024);
-                DWORDLONG availMemoryMB = memStatus.ullAvailPhys / (1024 * 1024);
-                
-                if(totalMemoryMB <= 4096 && availMemoryMB < 300) { // 低内存且可用内存少于300MB
-                    Logger::instance().appEvent(QString("检测到内存不足：总内存%1MB，可用%2MB，触发垃圾回收")
-                                               .arg(totalMemoryMB).arg(availMemoryMB), L_WARNING);
+            if(sysInfo.lowMemory) {
+                static int memoryCheckCounter = 0;
+                if(++memoryCheckCounter >= memoryCheckInterval) {
+                    memoryCheckCounter = 0;
                     
-                    // 触发JavaScript垃圾回收（超低频率调用）
-                    this->page()->runJavaScript("if(window.gc) window.gc(); "
-                                               "if(window.CollectGarbage) window.CollectGarbage();");
+                    MEMORYSTATUSEX memStatus;
+                    memStatus.dwLength = sizeof(memStatus);
+                    GlobalMemoryStatusEx(&memStatus);
+                    DWORDLONG availMemoryMB = memStatus.ullAvailPhys / (1024 * 1024);
+                    
+                    if(availMemoryMB < 200) { // 可用内存少于200MB时触发垃圾回收
+                        Logger::instance().appEvent(QString("检测到内存不足：可用%1MB，触发垃圾回收")
+                                                   .arg(availMemoryMB), L_WARNING);
+                        
+                        this->page()->runJavaScript("if(window.gc) window.gc(); "
+                                                   "if(window.CollectGarbage) window.CollectGarbage();");
+                    }
                 }
             }
 #endif
         });
-        maintenanceTimer->start(10000); // 从5秒改为10秒，进一步减少主线程阻塞
+        
+        // 根据环境设置维护定时器间隔
+        int maintenanceInterval = sysInfo.isVirtualized ? 20000 : 10000; // 虚拟化环境：20秒，其他：10秒
+        maintenanceTimer->start(maintenanceInterval);
 
         setContextMenuPolicy(Qt::NoContextMenu);
 
@@ -533,85 +554,53 @@ int main(int argc,char *argv[]){
 
     // Windows 7 WebEngine兼容性：在QApplication创建前设置环境变量
 #ifdef Q_OS_WIN
-    QString winVer = QSysInfo::productVersion();
-    bool isOldWin = winVer.startsWith("6.0")||winVer.startsWith("6.1")||winVer.startsWith("5.");
+    // 使用统一的系统检测函数
+    SystemInfo sysInfo = detectSystemInfo();
     
-    // 检测系统内存大小（以MB为单位）
-    MEMORYSTATUSEX memStatus;
-    memStatus.dwLength = sizeof(memStatus);
-    GlobalMemoryStatusEx(&memStatus);
-    DWORDLONG totalMemoryMB = memStatus.ullTotalPhys / (1024 * 1024);
-    bool lowMemory = totalMemoryMB <= 4096; // 4GB及以下视为低内存
-    
-    // 检测CPU架构和型号
-    bool isOldCpu = false;
-    QString cpuInfo = "Unknown";
-    
-    // 获取CPU信息
-    HKEY hKey;
-    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, 
-                      "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", 
-                      0, KEY_READ, &hKey) == ERROR_SUCCESS) {
-        DWORD dataSize = 256;
-        char data[256];
-        if (RegQueryValueExA(hKey, "ProcessorNameString", NULL, NULL, 
-                            (LPBYTE)data, &dataSize) == ERROR_SUCCESS) {
-            cpuInfo = QString::fromLocal8Bit(data).trimmed();
-        }
-        RegCloseKey(hKey);
-    }
-    
-    // 检测是否为老旧CPU架构（Haswell或更早）
-    // 四代：i3/i5/i7-4xxx, 三代：i3/i5/i7-3xxx, 二代：i3/i5/i7-2xxx
-    QRegExp oldCpuPattern("\\b[iI][3-7]-[2-4]\\d{3}\\b");
-    if (cpuInfo.contains(oldCpuPattern) || 
-        cpuInfo.contains("Haswell", Qt::CaseInsensitive) ||
-        cpuInfo.contains("Ivy Bridge", Qt::CaseInsensitive) ||
-        cpuInfo.contains("Sandy Bridge", Qt::CaseInsensitive)) {
-        isOldCpu = true;
-    }
-    
-    if(isOldWin) {
+    if(sysInfo.isOldWin) {
         // 创建Logger输出信息（这里Logger还没初始化，用printf）
         printf("检测到Windows 7系统\n");
-        printf("CPU信息：%s\n", cpuInfo.toLocal8Bit().constData());
-        printf("内存大小：%lld MB\n", totalMemoryMB);
-        printf("CPU架构：%s\n", isOldCpu ? "老旧架构(Haswell或更早)" : "较新架构");
+        printf("CPU信息：%s\n", sysInfo.cpuInfo.toLocal8Bit().constData());
+        printf("内存大小：%lld MB\n", sysInfo.totalMemoryMB);
+        printf("CPU架构：%s\n", sysInfo.isOldCpu ? "老旧架构(Haswell或更早)" : "较新架构");
+        printf("虚拟化环境：%s\n", sysInfo.isVirtualized ? "是" : "否");
         
         // Windows 7最兼容配置：只使用最基础、最稳定的设置
         qputenv("QTWEBENGINE_DISABLE_GPU", "1");
         qputenv("QTWEBENGINE_DISABLE_SANDBOX", "1");
         qputenv("QT_OPENGL", "software");
         
-        // 强制单线程模式
-        qputenv("QTWEBENGINE_CHROMIUM_FLAGS_SINGLE_THREAD", "1");
-        qputenv("QT_DISABLE_MULTITHREAD", "1");
+        // 虚拟化环境专用优化
+        if(sysInfo.isVirtualized) {
+            printf("检测到虚拟化环境，启用虚拟化优化模式\n");
+            qputenv("QTWEBENGINE_DISABLE_GPU_PROCESS", "1");
+            qputenv("QTWEBENGINE_DISABLE_SOFTWARE_RASTERIZER", "1");
+        }
         
+        // Chrome启动参数：针对虚拟化单核心环境的最小化配置
         QString chromiumFlags = "--no-sandbox --single-process --disable-dev-shm-usage "
-                              "--disable-extensions --disable-plugins --disable-background-timer-throttling ";
+                              "--disable-extensions --disable-plugins ";
         
-        if(lowMemory || isOldCpu) {
-            // 超保守模式：针对低内存或老旧CPU的严格优化
-            printf("启用超保守模式\n");
-            chromiumFlags += "--max_old_space_size=128 --disable-webgl --disable-webgl2 "
-                           "--disable-3d-apis --force-cpu-draw --use-gl=disabled "
+        if(sysInfo.isVirtualized && (sysInfo.lowMemory || sysInfo.isOldCpu)) {
+            // 虚拟化超保守模式：最小化资源占用
+            printf("启用虚拟化超保守模式\n");
+            chromiumFlags += "--max_old_space_size=64 --disable-webgl --disable-webgl2 "
+                           "--disable-3d-apis --use-gl=disabled --disable-gpu "
                            "--disable-accelerated-video-processing --disable-features=WebRTC "
+                           "--renderer-process-limit=1 --disable-smooth-scrolling "
+                           "--disable-background-networking --disable-renderer-backgrounding "
+                           "--memory-pressure-off --max-unused-resource-memory-usage-percentage=5";
+        } else if(sysInfo.lowMemory || sysInfo.isOldCpu) {
+            // 标准保守模式
+            printf("启用标准保守模式\n");
+            chromiumFlags += "--max_old_space_size=128 --disable-webgl "
+                           "--disable-accelerated-video-processing "
                            "--renderer-process-limit=1 --disable-smooth-scrolling";
         } else {
             // 标准Windows 7模式
             printf("启用标准Windows 7兼容模式\n");
-            chromiumFlags += "--max_old_space_size=256 --disable-smooth-scrolling";
+            chromiumFlags += "--max_old_space_size=256";
         }
-        
-        // 强制单核心单线程模式：彻底禁用多线程
-        printf("强制启用单核心单线程模式\n");
-        chromiumFlags += " --single-threaded --disable-threaded-compositing --disable-threaded-animation "
-                        "--disable-threaded-scrolling --max-threads=1 --renderer-process-limit=1 "
-                        "--disable-background-networking --disable-background-timer-throttling "
-                        "--disable-renderer-backgrounding --disable-backgrounding-occluded-windows "
-                        "--disable-ipc-flooding-protection --disable-features=ThreadedScrolling,CompositorThreading "
-                        "--force-synchronous-resize --disable-async-dns --disable-threaded-paint "
-                        "--disable-partial-raster --disable-zero-copy --disable-gpu-process-preallocation";
         
         qputenv("QTWEBENGINE_CHROMIUM_FLAGS", chromiumFlags.toLocal8Bit());
     }
