@@ -3,7 +3,7 @@ name: Build Kylin x86_64 AppImage
 on:
   push:
     tags:
-      - 'v*'
+      - 'v-kylin*'
   workflow_dispatch:
 
 jobs:

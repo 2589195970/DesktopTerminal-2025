@@ -3,7 +3,7 @@ name: Build Kylin ARM64 AppImage
 on:
   push:
     tags:
-      - 'v*'
+      - 'v-kylin*'
   workflow_dispatch:
 
 jobs:

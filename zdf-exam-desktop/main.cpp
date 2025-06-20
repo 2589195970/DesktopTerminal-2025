@@ -13,7 +13,11 @@
 #include <QTextStream>
 #include <QDateTime>
 #include <QHotkey>
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 #include <QTextCodec>
+#else
+#include <QStringConverter>
+#endif
 #include <QMenu>
 #include <QContextMenuEvent>
 #include <QJsonDocument>
@@ -24,6 +28,7 @@
 #include <QWindowStateChangeEvent>
 #include <QShortcut>
 #include <QSysInfo>
+#include <QVersionNumber>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -78,8 +83,14 @@ public:
         QFile file(logPath);
         if (file.open(QIODevice::Append | QIODevice::Text)) {
             QTextStream out(&file);
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
             out.setCodec("UTF-8");
-            for (const LogEntry &e : std::as_const(m_logBuffer[filename])) {
+#else
+            out.setEncoding(QStringConverter::Utf8);
+#endif
+            // 兼容C++11/14编译器，不使用std::as_const
+            const auto& logBuffer = m_logBuffer[filename];
+            for (const LogEntry &e : logBuffer) {
                 out << e.timestamp.toString("yyyy-MM-dd hh:mm:ss")
                     << " | " << e.category << " | " << e.message << "\n";
             }
@@ -97,10 +108,32 @@ public:
     void configEvent(const QString &msg, LogLevel lv=L_INFO) { logEvent("配置文件", msg, "config.log", lv); }
     void hotkeyEvent(const QString &msg) { logEvent("热键退出尝试", msg, "exit.log", L_INFO); }
     void logStartup(const QString &path) { logEvent("启动", QString("程序启动成功，使用配置文件: %1").arg(path), "startup.log", L_INFO); }
+    void errorEvent(const QString &msg, LogLevel lv=L_ERROR) { logEvent("错误", msg, "error.log", lv); }
+    void systemEvent(const QString &msg, LogLevel lv=L_INFO) { logEvent("系统信息", msg, "system.log", lv); }
 
     void showMessage(QWidget *p,const QString&t,const QString&m){QMessageBox::warning(p,t,m);}
+    void showCriticalError(QWidget *p,const QString&t,const QString&m){
+        QMessageBox::critical(p,t,m);
+        errorEvent(QString("%1: %2").arg(t).arg(m), L_ERROR);
+    }
     bool getPassword(QWidget* p,const QString&t,const QString&l,QString&pwd){
-        bool ok; pwd=QInputDialog::getText(p,t,l,QLineEdit::Password,"",&ok); return ok;
+        bool ok; pwd=QInputDialog::getText(p,t,l,QLineEdit::Password,"",&ok"); return ok;
+    }
+    
+    // 系统信息收集（用于问题诊断）
+    void collectSystemInfo() {
+        systemEvent(QString("Qt版本: %1").arg(QT_VERSION_STR));
+        systemEvent(QString("操作系统: %1 %2").arg(QSysInfo::productType()).arg(QSysInfo::productVersion()));
+        systemEvent(QString("系统架构: %1").arg(QSysInfo::currentCpuArchitecture()));
+        systemEvent(QString("内核版本: %1 %2").arg(QSysInfo::kernelType()).arg(QSysInfo::kernelVersion()));
+        systemEvent(QString("机器主机名: %1").arg(QSysInfo::machineHostName()));
+        
+        // GPU和显卡信息
+        systemEvent(QString("OpenGL环境变量: QT_OPENGL=%1").arg(qgetenv("QT_OPENGL").constData()));
+        systemEvent(QString("WebEngine标志: %1").arg(qgetenv("QTWEBENGINE_CHROMIUM_FLAGS").constData()));
+        
+        // 内存信息
+        systemEvent("程序启动完成，系统信息已收集");
     }
 
     void shutdown() {
@@ -110,7 +143,9 @@ public:
 
 private:
     Logger():m_logLevel(L_INFO) {
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
         QTextCodec::setCodecForLocale(QTextCodec::codecForName("UTF-8"));
+#endif
         m_flushTimer=new QTimer();
         QObject::connect(m_flushTimer,&QTimer::timeout,[this](){flushAllLogBuffers();});
         m_flushTimer->start(5000);
@@ -164,12 +199,17 @@ public:
     QString getExitPassword() const { return config.value("exitPassword").toString("123456"); }
     QString getAppName()      const { return config.value("appName").toString("zdf-exam-desktop"); }
     bool    isHardwareAccelerationDisabled() const { return config.value("disableHardwareAcceleration").toBool(false); }
+    int     getMaxMemoryMB()  const { return config.value("maxMemoryMB").toInt(512); }
+    bool    isLowMemoryMode() const { return config.value("lowMemoryMode").toBool(false); }
+    QString getProcessModel() const { return config.value("processModel").toString("process-per-site"); }
     QString getActualConfigPath() const { return actualConfigPath; }
 
     bool createDefaultConfig(const QString &path){
         QJsonObject def{{"url","http://stu.sdzdf.com/"},{"exitPassword","sdzdf@2025"},
                         {"appName","智多分机考桌面端"},{"iconPath","logo.svg"},
-                        {"appVersion","1.0.0"},{"disableHardwareAcceleration",false}};
+                        {"appVersion","1.0.0"},{"disableHardwareAcceleration",false},
+                        {"maxMemoryMB",512},{"lowMemoryMode",false},
+                        {"processModel","process-per-site"}};
         QFileInfo fi(path); QDir d=fi.dir(); if(!d.exists()&&!d.mkpath(".")) return false;
         QFile f(path); if(!f.open(QIODevice::WriteOnly)) return false;
         f.write(QJsonDocument(def).toJson()); f.close(); return true;
@@ -183,56 +223,142 @@ private:
 
 // --------------------------- 浏览器封装 ---------------------------
 class ShellBrowser : public QWebEngineView {
-    QHotkey *exitHotkeyF10{}, *exitHotkeyBackslash{};
-    QTimer *maintenanceTimer{};
-    bool needFocusCheck{true}, needFullscreenCheck{true};
+    Q_OBJECT  // 添加Q_OBJECT宏以支持信号和槽
+    
+private:
+    QHotkey *exitHotkeyF10;
+    QHotkey *exitHotkeyBackslash;
+    QTimer *maintenanceTimer;
+    bool needFocusCheck;
+    bool needFullscreenCheck;
 
 public:
-    ShellBrowser() {
+    ShellBrowser(QWidget *parent = nullptr) : QWebEngineView(parent),
+        exitHotkeyF10(nullptr),
+        exitHotkeyBackslash(nullptr), 
+        maintenanceTimer(nullptr),
+        needFocusCheck(true),
+        needFullscreenCheck(true) {
         setWindowTitle(ConfigManager::instance().getAppName());
         setMinimumSize(1280,800);
 
-        auto *settings = QWebEngineSettings::globalSettings();
-        settings->setAttribute(QWebEngineSettings::JavascriptEnabled,true);
-        settings->setAttribute(QWebEngineSettings::AutoLoadImages,true);
-        settings->setAttribute(QWebEngineSettings::PluginsEnabled,true);
-        settings->setAttribute(QWebEngineSettings::LocalStorageEnabled,true);
-        settings->setAttribute(QWebEngineSettings::PlaybackRequiresUserGesture,false);
-        settings->setAttribute(QWebEngineSettings::JavascriptCanOpenWindows,true);
+        // 尝试初始化WebEngine并捕获错误
+        try {
+            Logger::instance().appEvent("开始初始化QtWebEngine设置...");
+            auto *settings = QWebEngineSettings::globalSettings();
+            
+            settings->setAttribute(QWebEngineSettings::JavascriptEnabled,true);
+            settings->setAttribute(QWebEngineSettings::AutoLoadImages,true);
+            settings->setAttribute(QWebEngineSettings::PluginsEnabled,true);
+            settings->setAttribute(QWebEngineSettings::LocalStorageEnabled,true);
+            settings->setAttribute(QWebEngineSettings::PlaybackRequiresUserGesture,false);
+            settings->setAttribute(QWebEngineSettings::JavascriptCanOpenWindows,true);
+            Logger::instance().appEvent("基础WebEngine设置完成");
 
-        bool hw=!ConfigManager::instance().isHardwareAccelerationDisabled();
+            bool hw = !ConfigManager::instance().isHardwareAccelerationDisabled();
 #ifdef Q_OS_WIN
-        QString ver=QSysInfo::productVersion();
-        bool oldWin = ver.startsWith("6.0")||ver.startsWith("6.1")||ver.startsWith("5.");
-        if(oldWin) hw=false;
+            // 使用更精确的版本检测
+            QString ver = QSysInfo::productVersion();
+            QVersionNumber winVersion = QVersionNumber::fromString(ver);
+            bool isWin7OrOlder = winVersion.majorVersion() < 6 || 
+                               (winVersion.majorVersion() == 6 && winVersion.minorVersion() <= 1);
+                               
+            if(isWin7OrOlder) {
+                hw = false;
+                Logger::instance().appEvent("Windows 7兼容模式：开始应用特殊设置");
+                
+                // Windows 7特殊优化：禁用更多消耗性能的功能
+                settings->setAttribute(QWebEngineSettings::WebGLEnabled, false);
+                settings->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled, false);
+                settings->setAttribute(QWebEngineSettings::HyperlinkAuditingEnabled, false);
+                settings->setAttribute(QWebEngineSettings::ErrorPageEnabled, false);
+                settings->setAttribute(QWebEngineSettings::FocusOnNavigationEnabled, false);
+                
+                // 减少网络连接数以降低资源消耗
+                settings->setAttribute(QWebEngineSettings::LocalContentCanAccessRemoteUrls, false);
+                settings->setAttribute(QWebEngineSettings::LocalContentCanAccessFileUrls, false);
+                
+                Logger::instance().appEvent("Windows 7兼容模式：已禁用额外功能以优化性能", L_INFO);
+            } else {
+                Logger::instance().appEvent("检测到较新Windows系统，使用标准WebEngine设置", L_INFO);
+            }
 #endif
-        settings->setAttribute(QWebEngineSettings::WebGLEnabled,hw);
-        settings->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled,hw);
-        settings->setAttribute(QWebEngineSettings::ScreenCaptureEnabled,false);
-        settings->setAttribute(QWebEngineSettings::WebRTCPublicInterfacesOnly,true);
+            settings->setAttribute(QWebEngineSettings::WebGLEnabled,hw);
+            settings->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled,hw);
+            settings->setAttribute(QWebEngineSettings::ScreenCaptureEnabled,false);
+            settings->setAttribute(QWebEngineSettings::WebRTCPublicInterfacesOnly,true);
+            Logger::instance().appEvent("所有WebEngine设置已完成");
 
-        load(QUrl(ConfigManager::instance().getUrl()));
-        Logger::instance().appEvent("程序启动");
+            Logger::instance().appEvent("开始加载目标URL...");
+            load(QUrl(ConfigManager::instance().getUrl()));
+            Logger::instance().appEvent("URL加载请求已发送");
+            
+        } catch (const std::exception& e) {
+            QString errorMsg = QString("WebEngine初始化失败: %1").arg(QString::fromLocal8Bit(e.what()));
+            Logger::instance().errorEvent(errorMsg, L_ERROR);
+            Logger::instance().collectSystemInfo(); // 收集系统信息以便诊断
+            Logger::instance().showCriticalError(this, "致命错误", 
+                errorMsg + "\n\n请检查error.log和system.log文件获取详细信息。");
+            Logger::instance().shutdown(); // 确保日志被写入
+            QApplication::quit();
+            return;
+        } catch (...) {
+            QString errorMsg = "WebEngine初始化失败: 未知错误";
+            Logger::instance().errorEvent(errorMsg, L_ERROR);
+            Logger::instance().collectSystemInfo(); // 收集系统信息以便诊断
+            Logger::instance().showCriticalError(this, "致命错误", 
+                errorMsg + "\n\n这通常是硬件加速、GPU驱动或Qt版本兼容性问题。" +
+                "\n建议检查：\n1. 更新显卡驱动\n2. 在config.json中设置disableHardwareAcceleration=true" +
+                "\n3. 检查error.log和system.log文件获取详细信息。");
+            Logger::instance().shutdown(); // 确保日志被写入
+            QApplication::quit();
+            return;
+        }
+        
+        Logger::instance().appEvent("程序启动完成，开始设置热键...");
 
-        exitHotkeyF10 = new QHotkey(QKeySequence("F10"),true,this);
-        exitHotkeyBackslash = new QHotkey(QKeySequence("\\"),true,this);
-        connect(exitHotkeyF10,&QHotkey::activated,this,&ShellBrowser::handleExitHotkey);
-        connect(exitHotkeyBackslash,&QHotkey::activated,this,&ShellBrowser::handleExitHotkey);
+        // 使用智能指针或指定parent管理内存
+        exitHotkeyF10 = new QHotkey(QKeySequence("F10"), true, this);
+        exitHotkeyBackslash = new QHotkey(QKeySequence("\\"), true, this);
+        
+        // 使用Qt::QueuedConnection提高稳定性
+        connect(exitHotkeyF10, &QHotkey::activated, this, &ShellBrowser::handleExitHotkey, Qt::QueuedConnection);
+        connect(exitHotkeyBackslash, &QHotkey::activated, this, &ShellBrowser::handleExitHotkey, Qt::QueuedConnection);
 
         setWindowFlags(Qt::Window | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
         setWindowState(Qt::WindowFullScreen); showFullScreen();
 
-        maintenanceTimer=new QTimer(this);
-        connect(maintenanceTimer,&QTimer::timeout,this,[this](){
-            if(needFocusCheck && !isActiveWindow()){ raise(); activateWindow(); }
-            if(needFullscreenCheck && windowState()!=Qt::WindowFullScreen){ setWindowState(Qt::WindowFullScreen); showFullScreen(); }
-        });
+        maintenanceTimer = new QTimer(this);
+        connect(maintenanceTimer, &QTimer::timeout, this, [this](){
+            if(needFocusCheck && !isActiveWindow()) { 
+                raise(); 
+                activateWindow(); 
+            }
+            if(needFullscreenCheck && windowState() != Qt::WindowFullScreen) { 
+                setWindowState(Qt::WindowFullScreen); 
+                showFullScreen(); 
+            }
+        }, Qt::QueuedConnection);
         maintenanceTimer->start(1500);
 
         setContextMenuPolicy(Qt::NoContextMenu);
 
-        auto *refreshShortcut=new QShortcut(QKeySequence("Ctrl+R"),this);
-        connect(refreshShortcut,&QShortcut::activated,this,[this](){ reload(); Logger::instance().appEvent("用户使用Ctrl+R刷新页面"); });
+        auto *refreshShortcut = new QShortcut(QKeySequence("Ctrl+R"), this);
+        connect(refreshShortcut, &QShortcut::activated, this, [this](){
+            reload(); 
+            Logger::instance().appEvent("用户使用Ctrl+R刷新页面"); 
+        }, Qt::QueuedConnection);
+    }
+    
+    // 添加析构函数以确保资源清理
+    ~ShellBrowser() {
+        // Qt的parent-child机制会自动清理，但显式设置为null避免意外访问
+        if (maintenanceTimer) {
+            maintenanceTimer->stop();
+            maintenanceTimer = nullptr;
+        }
+        exitHotkeyF10 = nullptr;
+        exitHotkeyBackslash = nullptr;
     }
 
 protected:
@@ -290,6 +416,9 @@ protected:
     }
 };
 
+// 包含MOC生成的代码（如果需要）
+#include "main.moc"
+
 // --------------------------- 全局事件过滤器 ---------------------------
 class GlobalEventFilter : public QObject {
 protected:
@@ -324,10 +453,82 @@ protected:
     }
 };
 
+// 全局异常处理函数
+void handleFatalError(const QString &errorMsg) {
+    // 紧急情况下直接写文件，不依赖Logger实例
+    QString logPath = QCoreApplication::applicationDirPath() + "/log/crash.log";
+    QDir logDir = QFileInfo(logPath).dir();
+    if (!logDir.exists()) logDir.mkpath(".");
+    
+    QFile crashFile(logPath);
+    if (crashFile.open(QIODevice::Append | QIODevice::Text)) {
+        QTextStream out(&crashFile);
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+        out.setCodec("UTF-8");
+#else
+        out.setEncoding(QStringConverter::Utf8);
+#endif
+        out << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss") 
+            << " | 致命错误 | " << errorMsg << "\n";
+        crashFile.close();
+    }
+    
+    // 显示紧急弹窗（如果可能）
+    QMessageBox::critical(nullptr, "程序崩溃", 
+        QString("程序遇到致命错误需要退出：\n\n%1\n\n"
+                "错误信息已保存到crash.log文件中。\n"
+                "请联系技术支持并提供log文件夹中的所有日志文件。").arg(errorMsg));
+}
+
 // --------------------------- main ---------------------------
 int main(int argc,char *argv[]){
+    // ============ 关键修复：彻底禁用硬件加速解决黑屏和高CPU问题 ============
+#ifdef Q_OS_WIN
+    // 更精确的Windows版本检测
+    QString winVer = QSysInfo::productVersion();
+    QVersionNumber version = QVersionNumber::fromString(winVer);
+    bool isWin7OrOlder = version.majorVersion() < 6 || 
+                        (version.majorVersion() == 6 && version.minorVersion() <= 1);
+    
+    if (isWin7OrOlder) {
+        // Windows 7及更老版本：彻底禁用GPU进程和硬件加速
+        qputenv("QTWEBENGINE_CHROMIUM_FLAGS", 
+                "--disable-gpu "
+                "--disable-gpu-compositing "
+                "--disable-gpu-rasterization "
+                "--disable-gpu-sandbox "
+                "--disable-software-rasterizer "
+                "--disable-backgrounding-occluded-windows "
+                "--disable-renderer-backgrounding "
+                "--disable-background-timer-throttling "
+                "--disable-background-networking "
+                "--disable-default-apps "
+                "--disable-extensions "
+                "--disable-sync "
+                "--no-sandbox "
+                "--single-process");
+        
+        // 禁用GPU线程避免卡顿
+        qputenv("QTWEBENGINE_DISABLE_GPU_THREAD", "1");
+        
+        // 强制软件渲染
+        qputenv("QT_OPENGL", "software");
+        qputenv("QT_ANGLE_PLATFORM", "d3d9");
+        
+        // 日志将在QApplication创建后记录
+    } else {
+        // 较新Windows版本：适度优化
+        qputenv("QTWEBENGINE_CHROMIUM_FLAGS", 
+                "--disable-background-timer-throttling "
+                "--disable-renderer-backgrounding "
+                "--max_old_space_size=512");
+    }
+#endif
+
     QApplication app(argc,argv);
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     QTextCodec::setCodecForLocale(QTextCodec::codecForName("UTF-8"));
+#endif
 
 #ifdef Q_OS_WIN
     SetConsoleOutputCP(CP_UTF8); SetConsoleCP(CP_UTF8);
@@ -347,6 +548,22 @@ int main(int argc,char *argv[]){
 #endif
     Logger::instance().ensureLogDirectoryExists();
     Logger::instance().appEvent("应用程序初始化...");
+    
+    // 收集系统信息用于问题诊断
+    Logger::instance().collectSystemInfo();
+
+#ifdef Q_OS_WIN
+    // 使用与上面相同的版本检测逻辑
+    QString winVer = QSysInfo::productVersion();
+    QVersionNumber version = QVersionNumber::fromString(winVer);
+    bool isWin7OrOlder = version.majorVersion() < 6 || 
+                        (version.majorVersion() == 6 && version.minorVersion() <= 1);
+    if (isWin7OrOlder) {
+        Logger::instance().appEvent("检测到Windows 7系统，已启用兼容模式（彻底禁用硬件加速）", L_WARNING);
+    } else {
+        Logger::instance().appEvent("检测到较新Windows系统，使用标准优化模式", L_INFO);
+    }
+#endif
 
     ConfigManager &cfg=ConfigManager::instance();
     if(!cfg.loadConfig()){
@@ -361,9 +578,42 @@ int main(int argc,char *argv[]){
     }
     Logger::instance().logStartup(cfg.getActualConfigPath());
 
+    // ============ 内存优化：根据配置动态调整 ============
+    // 注意：在QApplication创建后修改环境变量可能无效，但保留以供调试
+    if(cfg.isLowMemoryMode() || cfg.getMaxMemoryMB() <= 1024) {
+        Logger::instance().appEvent(QString("检测到低内存模式配置，内存限制: %1MB").arg(cfg.getMaxMemoryMB()), L_WARNING);
+        Logger::instance().appEvent("注意：部分内存优化需要在程序启动前设置环境变量", L_INFO);
+    }
+
     GlobalEventFilter *f=new GlobalEventFilter; app.installEventFilter(f);
 
-    ShellBrowser browser; browser.showFullScreen();
-    QObject::connect(&app,&QApplication::aboutToQuit,[](){ Logger::instance().shutdown(); });
-    return app.exec();
+    // 包装主浏览器创建和运行逻辑，捕获任何未预期的异常
+    try {
+        ShellBrowser browser; 
+        browser.showFullScreen();
+        
+        QObject::connect(&app,&QApplication::aboutToQuit,[](){ 
+            Logger::instance().appEvent("程序正常退出");
+            Logger::instance().shutdown(); 
+        });
+        
+        Logger::instance().appEvent("程序完全启动成功，进入主循环");
+        return app.exec();
+        
+    } catch (const std::exception& e) {
+        QString errorMsg = QString("程序启动过程中发生标准异常: %1").arg(e.what());
+        handleFatalError(errorMsg);
+        return 1;
+    } catch (...) {
+        QString errorMsg = "程序启动过程中发生未知异常，这通常是由于:\n"
+                          "1. QtWebEngine无法初始化（GPU/显卡驱动问题）\n"
+                          "2. 系统资源不足（内存/CPU）\n"
+                          "3. 虚拟机环境兼容性问题\n\n"
+                          "建议检查：\n"
+                          "- 更新显卡驱动\n"
+                          "- 增加虚拟机内存分配\n"
+                          "- 确保config.json中disableHardwareAcceleration设为true";
+        handleFatalError(errorMsg);
+        return 1;
+    }
 }

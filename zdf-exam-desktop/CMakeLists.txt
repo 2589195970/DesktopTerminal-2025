@@ -4,7 +4,7 @@ project(zdf-exam-desktop)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 14)
 
 # Windows 平台特殊设置
 if(WIN32)
