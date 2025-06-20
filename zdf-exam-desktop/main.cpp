@@ -254,9 +254,38 @@ public:
             GlobalMemoryStatusEx(&memStatus);
             DWORDLONG totalMemoryMB = memStatus.ullTotalPhys / (1024 * 1024);
             
-            Logger::instance().appEvent(QString("检测到Windows 7系统，总内存：%1MB，启用最大兼容模式").arg(totalMemoryMB), L_INFO);
-            if(totalMemoryMB <= 4096) {
-                Logger::instance().appEvent("检测到低内存环境，已启用超保守优化模式", L_WARNING);
+            // 重新获取CPU信息
+            QString cpuInfo = "Unknown";
+            bool isOldCpu = false;
+            HKEY hKey;
+            if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, 
+                              "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", 
+                              0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+                DWORD dataSize = 256;
+                char data[256];
+                if (RegQueryValueExA(hKey, "ProcessorNameString", NULL, NULL, 
+                                    (LPBYTE)data, &dataSize) == ERROR_SUCCESS) {
+                    cpuInfo = QString::fromLocal8Bit(data).trimmed();
+                }
+                RegCloseKey(hKey);
+            }
+            
+            QRegExp oldCpuPattern("\\b[iI][3-7]-[2-4]\\d{3}\\b");
+            if (cpuInfo.contains(oldCpuPattern) || 
+                cpuInfo.contains("Haswell", Qt::CaseInsensitive) ||
+                cpuInfo.contains("Ivy Bridge", Qt::CaseInsensitive) ||
+                cpuInfo.contains("Sandy Bridge", Qt::CaseInsensitive)) {
+                isOldCpu = true;
+            }
+            
+            Logger::instance().appEvent(QString("检测到Windows 7系统 - CPU：%1，总内存：%2MB").arg(cpuInfo).arg(totalMemoryMB), L_INFO);
+            
+            if(isOldCpu) {
+                Logger::instance().appEvent("检测到Haswell/Ivy Bridge/Sandy Bridge等老旧CPU架构，启用老旧硬件兼容模式", L_WARNING);
+            }
+            
+            if(totalMemoryMB <= 4096 || isOldCpu) {
+                Logger::instance().appEvent("检测到低内存或老旧CPU环境，已启用超保守优化模式", L_WARNING);
             }
             
             // 强制禁用所有硬件加速功能
@@ -469,7 +498,41 @@ int main(int argc,char *argv[]){
     DWORDLONG totalMemoryMB = memStatus.ullTotalPhys / (1024 * 1024);
     bool lowMemory = totalMemoryMB <= 4096; // 4GB及以下视为低内存
     
+    // 检测CPU架构和型号
+    bool isOldCpu = false;
+    QString cpuInfo = "Unknown";
+    
+    // 获取CPU信息
+    HKEY hKey;
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, 
+                      "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", 
+                      0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        DWORD dataSize = 256;
+        char data[256];
+        if (RegQueryValueExA(hKey, "ProcessorNameString", NULL, NULL, 
+                            (LPBYTE)data, &dataSize) == ERROR_SUCCESS) {
+            cpuInfo = QString::fromLocal8Bit(data).trimmed();
+        }
+        RegCloseKey(hKey);
+    }
+    
+    // 检测是否为老旧CPU架构（Haswell或更早）
+    // 四代：i3/i5/i7-4xxx, 三代：i3/i5/i7-3xxx, 二代：i3/i5/i7-2xxx
+    QRegExp oldCpuPattern("\\b[iI][3-7]-[2-4]\\d{3}\\b");
+    if (cpuInfo.contains(oldCpuPattern) || 
+        cpuInfo.contains("Haswell", Qt::CaseInsensitive) ||
+        cpuInfo.contains("Ivy Bridge", Qt::CaseInsensitive) ||
+        cpuInfo.contains("Sandy Bridge", Qt::CaseInsensitive)) {
+        isOldCpu = true;
+    }
+    
     if(oldWin) {
+        // 创建Logger输出信息（这里Logger还没初始化，用printf）
+        printf("检测到Windows 7系统\n");
+        printf("CPU信息：%s\n", cpuInfo.toLocal8Bit().constData());
+        printf("内存大小：%lld MB\n", totalMemoryMB);
+        printf("CPU架构：%s\n", isOldCpu ? "老旧架构(Haswell或更早)" : "较新架构");
+        
         // Windows 7最兼容配置：只使用最基础、最稳定的设置
         qputenv("QTWEBENGINE_DISABLE_GPU", "1");
         qputenv("QTWEBENGINE_DISABLE_SANDBOX", "1");
@@ -479,8 +542,9 @@ int main(int argc,char *argv[]){
                               "--disable-extensions --disable-plugins --disable-background-timer-throttling "
                               "--memory-pressure-off ";
         
-        if(lowMemory) {
-            // 超保守模式：针对2GB-4GB内存的严格优化
+        if(lowMemory || isOldCpu) {
+            // 超保守模式：针对低内存或老旧CPU的严格优化
+            printf("启用超保守模式\n");
             chromiumFlags += "--max_old_space_size=128 --max-new-space-size=16 "
                            "--disable-background-networking --disable-background-sync "
                            "--disable-client-side-phishing-detection --disable-component-update "
@@ -489,10 +553,14 @@ int main(int argc,char *argv[]){
                            "--max-active-webgl-contexts=0 --disable-accelerated-2d-canvas "
                            "--disable-accelerated-jpeg-decoding --disable-accelerated-mjpeg-decode "
                            "--disable-accelerated-video-decode --reduce-user-agent-minor-version "
-                           "--disable-features=VizDisplayCompositor,AudioServiceOutOfProcess "
+                           "--disable-features=VizDisplayCompositor,AudioServiceOutOfProcess,WebRTC "
+                           "--disable-webgl --disable-webgl2 --disable-3d-apis "
+                           "--disable-accelerated-video-processing --force-cpu-draw "
+                           "--disable-software-rasterizer --use-gl=disabled "
                            "--renderer-process-limit=1 --max-gum-fps=15";
         } else {
             // 标准Windows 7模式
+            printf("启用标准Windows 7兼容模式\n");
             chromiumFlags += "--max_old_space_size=256";
         }
         
