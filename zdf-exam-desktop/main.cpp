@@ -30,7 +30,6 @@
 #include <iostream>
 #include <io.h>
 #include <fcntl.h>
-#include <QSettings>
 #endif
 
 // --------------------------- 日志相关 ---------------------------
@@ -219,27 +218,15 @@ public:
         settings->setAttribute(QWebEngineSettings::ScreenCaptureEnabled,false);
         settings->setAttribute(QWebEngineSettings::WebRTCPublicInterfacesOnly,true);
         
-        // Windows 7额外兼容性设置
+        // Windows 7最兼容设置：强制禁用所有可能导致问题的功能
 #ifdef Q_OS_WIN
         if(oldWin) {
-            // 检测DX11支持来选择最优渲染方式
-            QString d3d11Path = QString::fromUtf8(qgetenv("WINDIR")) + "\\System32\\d3d11.dll";
-            bool hasDX11 = QFileInfo(d3d11Path).exists();
-            
-            if(hasDX11) {
-                Logger::instance().appEvent("检测到DirectX 11支持，使用ANGLE D3D11渲染模式", L_INFO);
-                // DX11可用时使用硬件加速，但保持单进程模式确保稳定性
-                settings->setAttribute(QWebEngineSettings::WebGLEnabled, true);
-                settings->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled, true);
-                // 保持安全的单进程模式
-                hw = true;
-            } else {
-                Logger::instance().appEvent("DirectX 11不可用，启用完全软件渲染模式", L_INFO);
-                // 完全禁用硬件加速
-                settings->setAttribute(QWebEngineSettings::WebGLEnabled, false);
-                settings->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled, false);
-                hw = false;
-            }
+            Logger::instance().appEvent("检测到Windows 7系统，启用最大兼容模式", L_INFO);
+            // 强制禁用所有硬件加速功能
+            settings->setAttribute(QWebEngineSettings::WebGLEnabled, false);
+            settings->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled, false);
+            settings->setAttribute(QWebEngineSettings::PluginsEnabled, false);
+            hw = false;
         }
 #endif
 
@@ -363,45 +350,13 @@ int main(int argc,char *argv[]){
     QString ver = QSysInfo::productVersion();
     bool oldWin = ver.startsWith("6.0")||ver.startsWith("6.1")||ver.startsWith("5.");
     if(oldWin) {
-        // 检测DirectX 11支持情况来优化渲染配置
-        bool hasDX11 = false;
+        // Windows 7最兼容配置：只使用最基础、最稳定的设置
+        qputenv("QTWEBENGINE_DISABLE_GPU", "1");
+        qputenv("QTWEBENGINE_DISABLE_SANDBOX", "1");
+        qputenv("QT_OPENGL", "software");
         
-        // 检测DirectX 11支持
-        QSettings dxSettings("HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\DirectX", QSettings::NativeFormat);
-        QString dxVersion = dxSettings.value("Version", "").toString();
-        
-        // 检测D3D11.dll是否存在
-        QString d3d11Path = QString::fromUtf8(qgetenv("WINDIR")) + "\\System32\\d3d11.dll";
-        QFileInfo d3d11File(d3d11Path);
-        
-        if (d3d11File.exists() || dxVersion.contains("11")) {
-            hasDX11 = true;
-        }
-        
-        if(hasDX11) {
-            // DX11系统：使用ANGLE D3D11渲染（性能更好）
-            qputenv("QT_OPENGL", "angle");
-            qputenv("QT_ANGLE_PLATFORM", "d3d11");
-            qputenv("QTWEBENGINE_CHROMIUM_FLAGS", 
-                "--use-angle=d3d11 "
-                "--use-gl=angle "
-                "--enable-gpu-rasterization "
-                "--disable-software-rasterizer "
-                "--no-sandbox "
-                "--single-process");
-            qputenv("QTWEBENGINE_DISABLE_SANDBOX", "1");
-        } else {
-            // 旧系统：完全软件渲染
-            qputenv("QTWEBENGINE_DISABLE_GPU", "1");
-            qputenv("QTWEBENGINE_DISABLE_SANDBOX", "1");
-            qputenv("QT_OPENGL", "software");
-            qputenv("QSG_RHI_PREFER_SOFTWARE_RENDERER", "1");
-            qputenv("QTWEBENGINE_CHROMIUM_FLAGS", 
-                "--disable-gpu "
-                "--disable-gpu-compositing "
-                "--single-process "
-                "--no-sandbox");
-        }
+        // 只使用最核心的Chromium标志，避免兼容性问题
+        qputenv("QTWEBENGINE_CHROMIUM_FLAGS", "--no-sandbox --single-process");
     }
 #endif
 
