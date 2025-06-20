@@ -228,9 +228,9 @@ public:
 
         bool hw=!ConfigManager::instance().isHardwareAccelerationDisabled();
 #ifdef Q_OS_WIN
-        QString ver=QSysInfo::productVersion();
-        bool oldWin = ver.startsWith("6.0")||ver.startsWith("6.1")||ver.startsWith("5.");
-        if(oldWin) {
+        QString sysVer=QSysInfo::productVersion();
+        bool isOldWin = sysVer.startsWith("6.0")||sysVer.startsWith("6.1")||sysVer.startsWith("5.");
+        if(isOldWin) {
             hw=false;
             // Windows 7特殊配置：强制禁用可能导致崩溃的功能
             settings->setAttribute(QWebEngineSettings::PluginsEnabled,false);
@@ -247,7 +247,7 @@ public:
         
         // Windows 7最兼容设置：强制禁用所有可能导致问题的功能
 #ifdef Q_OS_WIN
-        if(oldWin) {
+        if(isOldWin) {
             // 检测内存并记录系统信息
             MEMORYSTATUSEX memStatus;
             memStatus.dwLength = sizeof(memStatus);
@@ -350,10 +350,10 @@ public:
             if(needFocusCheck && !isActiveWindow()){ raise(); activateWindow(); }
             if(needFullscreenCheck && windowState()!=Qt::WindowFullScreen){ setWindowState(Qt::WindowFullScreen); showFullScreen(); }
             
-            // 低内存环境下的内存监控和回收
+            // 低内存环境下的内存监控和回收（频率降低以减少CPU占用）
 #ifdef Q_OS_WIN
             static int memoryCheckCounter = 0;
-            if(++memoryCheckCounter >= 10) { // 每15秒检查一次内存（1.5s * 10）
+            if(++memoryCheckCounter >= 20) { // 每60秒检查一次内存（3s * 20）
                 memoryCheckCounter = 0;
                 
                 MEMORYSTATUSEX memStatus;
@@ -366,18 +366,14 @@ public:
                     Logger::instance().appEvent(QString("检测到内存不足：总内存%1MB，可用%2MB，触发垃圾回收")
                                                .arg(totalMemoryMB).arg(availMemoryMB), L_WARNING);
                     
-                    // 触发JavaScript垃圾回收
+                    // 触发JavaScript垃圾回收（减少频繁调用）
                     this->page()->runJavaScript("if(window.gc) window.gc(); "
                                                "if(window.CollectGarbage) window.CollectGarbage();");
-                    
-                    // 清理Qt对象缓存
-                    QCoreApplication::sendPostedEvents();
-                    QCoreApplication::processEvents();
                 }
             }
 #endif
         });
-        maintenanceTimer->start(1500);
+        maintenanceTimer->start(3000); // 减少频率：从1.5秒改为3秒
 
         setContextMenuPolicy(Qt::NoContextMenu);
 
@@ -549,7 +545,7 @@ int main(int argc,char *argv[]){
                            "--disable-background-networking --disable-background-sync "
                            "--disable-client-side-phishing-detection --disable-component-update "
                            "--disable-default-apps --disable-hang-monitor --disable-prompt-on-repost "
-                           "--disable-web-security --aggressive-cache-discard --memory-pressure-off "
+                           "--disable-web-security --aggressive-cache-discard "
                            "--max-active-webgl-contexts=0 --disable-accelerated-2d-canvas "
                            "--disable-accelerated-jpeg-decoding --disable-accelerated-mjpeg-decode "
                            "--disable-accelerated-video-decode --reduce-user-agent-minor-version "
@@ -557,11 +553,13 @@ int main(int argc,char *argv[]){
                            "--disable-webgl --disable-webgl2 --disable-3d-apis "
                            "--disable-accelerated-video-processing --force-cpu-draw "
                            "--disable-software-rasterizer --use-gl=disabled "
-                           "--renderer-process-limit=1 --max-gum-fps=15";
+                           "--renderer-process-limit=1 --max-gum-fps=30 "
+                           "--disable-smooth-scrolling --disable-threaded-scrolling "
+                           "--disable-checker-imaging --disable-new-content-rendering-timeout";
         } else {
             // 标准Windows 7模式
             printf("启用标准Windows 7兼容模式\n");
-            chromiumFlags += "--max_old_space_size=256";
+            chromiumFlags += "--max_old_space_size=256 --disable-smooth-scrolling";
         }
         
         qputenv("QTWEBENGINE_CHROMIUM_FLAGS", chromiumFlags.toLocal8Bit());
