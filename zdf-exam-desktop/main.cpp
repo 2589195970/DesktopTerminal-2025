@@ -345,6 +345,16 @@ protected:
 
 // --------------------------- main ---------------------------
 int main(int argc,char *argv[]){
+#ifdef Q_OS_WIN
+    // 针对0x40000015异常的Windows特殊处理
+    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
+    
+    // 禁用DEP以避免执行保护冲突（如果管理员权限允许）
+    DWORD flOldProtect;
+    DWORD flNewProtect = PAGE_EXECUTE_READWRITE;
+    // 这只是尝试，失败也不影响程序继续
+#endif
+
     // Windows 7 WebEngine兼容性：在QApplication创建前设置环境变量
 #ifdef Q_OS_WIN
     QString ver = QSysInfo::productVersion();
@@ -355,8 +365,16 @@ int main(int argc,char *argv[]){
         qputenv("QTWEBENGINE_DISABLE_SANDBOX", "1");
         qputenv("QT_OPENGL", "software");
         
-        // 只使用最核心的Chromium标志，避免兼容性问题
-        qputenv("QTWEBENGINE_CHROMIUM_FLAGS", "--no-sandbox --single-process");
+        // 针对0x40000015异常和低内存环境的优化配置
+        qputenv("QTWEBENGINE_CHROMIUM_FLAGS", 
+            "--no-sandbox "
+            "--single-process "
+            "--disable-dev-shm-usage "
+            "--disable-extensions "
+            "--disable-plugins "
+            "--disable-background-timer-throttling "
+            "--memory-pressure-off "
+            "--max_old_space_size=256");
     }
 #endif
 
