@@ -224,9 +224,26 @@ public:
             // 禁用GPU进程以避免崩溃
             qputenv("QTWEBENGINE_DISABLE_GPU", "1");
             qputenv("QTWEBENGINE_DISABLE_SANDBOX", "1");
-            // 强制软件渲染
-            qputenv("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu --disable-gpu-sandbox --disable-software-rasterizer --in-process-gpu");
-            Logger::instance().appEvent("应用Windows 7 WebEngine兼容性补丁", L_INFO);
+            // 强制软件渲染并禁用GPU合成（解决黑屏问题）
+            qputenv("QTWEBENGINE_CHROMIUM_FLAGS", 
+                "--disable-gpu "
+                "--disable-gpu-compositing "
+                "--disable-gpu-sandbox "
+                "--disable-software-rasterizer "
+                "--num-raster-threads=1 "
+                "--enable-viewport "
+                "--main-frame-resizes-are-orientation-changes "
+                "--disable-composited-antialiasing "
+                "--disable-accelerated-2d-canvas "
+                "--disable-accelerated-jpeg-decoding "
+                "--disable-accelerated-mjpeg-decode "
+                "--disable-accelerated-video-decode "
+                "--in-process-gpu "
+                "--single-process");
+            // 强制使用软件OpenGL渲染
+            qputenv("QT_OPENGL", "software");
+            qputenv("QSG_RHI_PREFER_SOFTWARE_RENDERER", "1");
+            Logger::instance().appEvent("应用Windows 7 WebEngine黑屏修复补丁", L_INFO);
         }
 #endif
 
@@ -345,6 +362,27 @@ protected:
 
 // --------------------------- main ---------------------------
 int main(int argc,char *argv[]){
+    // Windows 7 WebEngine兼容性：在QApplication创建前设置环境变量
+#ifdef Q_OS_WIN
+    QString ver = QSysInfo::productVersion();
+    bool oldWin = ver.startsWith("6.0")||ver.startsWith("6.1")||ver.startsWith("5.");
+    if(oldWin) {
+        // 设置WebEngine环境变量（必须在QApplication之前）
+        qputenv("QTWEBENGINE_DISABLE_GPU", "1");
+        qputenv("QTWEBENGINE_DISABLE_SANDBOX", "1");
+        qputenv("QT_OPENGL", "software");
+        qputenv("QSG_RHI_PREFER_SOFTWARE_RENDERER", "1");
+        qputenv("QTWEBENGINE_CHROMIUM_FLAGS", 
+            "--disable-gpu "
+            "--disable-gpu-compositing "
+            "--disable-gpu-sandbox "
+            "--single-process "
+            "--in-process-gpu "
+            "--disable-dev-shm-usage "
+            "--no-sandbox");
+    }
+#endif
+
     QApplication app(argc,argv);
     QTextCodec::setCodecForLocale(QTextCodec::codecForName("UTF-8"));
 
