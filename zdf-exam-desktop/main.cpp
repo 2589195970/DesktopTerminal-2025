@@ -32,6 +32,72 @@
 #include <fcntl.h>
 #endif
 
+// --------------------------- 系统信息检测结构体 ---------------------------
+struct SystemInfo {
+    bool isOldWin = false;
+    bool lowMemory = false;
+    bool isOldCpu = false;
+    bool isVirtualized = false;
+    QString cpuInfo = "Unknown";
+#ifdef Q_OS_WIN
+    DWORDLONG totalMemoryMB = 0;
+#else
+    quint64 totalMemoryMB = 0;
+#endif
+};
+
+SystemInfo detectSystemInfo() {
+    SystemInfo info;
+    
+#ifdef Q_OS_WIN
+    // 检测Windows版本
+    QString winVer = QSysInfo::productVersion();
+    info.isOldWin = winVer.startsWith("6.0") || winVer.startsWith("6.1") || winVer.startsWith("5.");
+    
+    if(info.isOldWin) {
+        // 检测内存
+        MEMORYSTATUSEX memStatus;
+        memStatus.dwLength = sizeof(memStatus);
+        GlobalMemoryStatusEx(&memStatus);
+        info.totalMemoryMB = memStatus.ullTotalPhys / (1024 * 1024);
+        info.lowMemory = info.totalMemoryMB <= 4096;
+        
+        // 检测CPU信息（只执行一次）
+        HKEY hKey;
+        if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, 
+                          "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", 
+                          0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+            DWORD dataSize = 256;
+            char data[256];
+            if (RegQueryValueExA(hKey, "ProcessorNameString", NULL, NULL, 
+                                (LPBYTE)data, &dataSize) == ERROR_SUCCESS) {
+                info.cpuInfo = QString::fromLocal8Bit(data).trimmed();
+            }
+            RegCloseKey(hKey);
+        }
+        
+        // 检测是否为老旧CPU架构
+        QRegExp oldCpuPattern("\\b[iI][3-7]-[2-4]\\d{3}\\b");
+        if (info.cpuInfo.contains(oldCpuPattern) || 
+            info.cpuInfo.contains("Haswell", Qt::CaseInsensitive) ||
+            info.cpuInfo.contains("Ivy Bridge", Qt::CaseInsensitive) ||
+            info.cpuInfo.contains("Sandy Bridge", Qt::CaseInsensitive)) {
+            info.isOldCpu = true;
+        }
+        
+        // 检测是否为虚拟化环境
+        if (info.cpuInfo.contains("Virtual", Qt::CaseInsensitive) ||
+            info.cpuInfo.contains("QEMU", Qt::CaseInsensitive) ||
+            info.cpuInfo.contains("VMware", Qt::CaseInsensitive) ||
+            info.cpuInfo.contains("VirtualBox", Qt::CaseInsensitive)) {
+            info.isVirtualized = true;
+        }
+    }
+#endif
+    
+    return info;
+}
+
 // --------------------------- 日志相关 ---------------------------
 enum LogLevel { L_DEBUG, L_INFO, L_WARNING, L_ERROR };
 
@@ -114,13 +180,8 @@ private:
         m_flushTimer=new QTimer();
         QObject::connect(m_flushTimer,&QTimer::timeout,[this](){flushAllLogBuffers();});
         
-        // 虚拟化环境优化：根据环境调整定时器频率
-        SystemInfo sysInfo = detectSystemInfo();
-        int flushInterval = 60000; // 默认1分钟
-        if(sysInfo.isVirtualized) {
-            flushInterval = 120000; // 虚拟化环境：2分钟
-        }
-        m_flushTimer->start(flushInterval);
+        // 使用默认定时器频率，避免构造函数中的复杂检测
+        m_flushTimer->start(60000); // 默认1分钟间隔
     }
     Logger(const Logger&)=delete; Logger& operator=(const Logger&)=delete;
     ~Logger(){shutdown();}
@@ -130,71 +191,6 @@ private:
     QTimer* m_flushTimer{};
 };
 
-// --------------------------- 系统信息检测 ---------------------------
-struct SystemInfo {
-    bool isOldWin = false;
-    bool lowMemory = false;
-    bool isOldCpu = false;
-    bool isVirtualized = false;
-    QString cpuInfo = "Unknown";
-#ifdef Q_OS_WIN
-    DWORDLONG totalMemoryMB = 0;
-#else
-    quint64 totalMemoryMB = 0;
-#endif
-};
-
-SystemInfo detectSystemInfo() {
-    SystemInfo info;
-    
-#ifdef Q_OS_WIN
-    // 检测Windows版本
-    QString winVer = QSysInfo::productVersion();
-    info.isOldWin = winVer.startsWith("6.0") || winVer.startsWith("6.1") || winVer.startsWith("5.");
-    
-    if(info.isOldWin) {
-        // 检测内存
-        MEMORYSTATUSEX memStatus;
-        memStatus.dwLength = sizeof(memStatus);
-        GlobalMemoryStatusEx(&memStatus);
-        info.totalMemoryMB = memStatus.ullTotalPhys / (1024 * 1024);
-        info.lowMemory = info.totalMemoryMB <= 4096;
-        
-        // 检测CPU信息（只执行一次）
-        HKEY hKey;
-        if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, 
-                          "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", 
-                          0, KEY_READ, &hKey) == ERROR_SUCCESS) {
-            DWORD dataSize = 256;
-            char data[256];
-            if (RegQueryValueExA(hKey, "ProcessorNameString", NULL, NULL, 
-                                (LPBYTE)data, &dataSize) == ERROR_SUCCESS) {
-                info.cpuInfo = QString::fromLocal8Bit(data).trimmed();
-            }
-            RegCloseKey(hKey);
-        }
-        
-        // 检测是否为老旧CPU架构
-        QRegExp oldCpuPattern("\\b[iI][3-7]-[2-4]\\d{3}\\b");
-        if (info.cpuInfo.contains(oldCpuPattern) || 
-            info.cpuInfo.contains("Haswell", Qt::CaseInsensitive) ||
-            info.cpuInfo.contains("Ivy Bridge", Qt::CaseInsensitive) ||
-            info.cpuInfo.contains("Sandy Bridge", Qt::CaseInsensitive)) {
-            info.isOldCpu = true;
-        }
-        
-        // 检测是否为虚拟化环境
-        if (info.cpuInfo.contains("Virtual", Qt::CaseInsensitive) ||
-            info.cpuInfo.contains("QEMU", Qt::CaseInsensitive) ||
-            info.cpuInfo.contains("VMware", Qt::CaseInsensitive) ||
-            info.cpuInfo.contains("VirtualBox", Qt::CaseInsensitive)) {
-            info.isVirtualized = true;
-        }
-    }
-#endif
-    
-    return info;
-}
 
 // --------------------------- 配置管理 ---------------------------
 class ConfigManager {
