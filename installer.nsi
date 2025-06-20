@@ -61,6 +61,24 @@ LangString MSG_UninstallDone ${LANG_SIMPCHINESE} "卸载完成，相关文件已
 Section "主程序" SecMain
     SetOutPath "$INSTDIR"
 
+    ; 检查并安装VC++ 2017 Redistributable (x86)
+    ${If} ${RunningX64}
+        SetRegView 32  ; 在64位系统上检查32位注册表
+    ${EndIf}
+    
+    ReadRegStr $0 HKLM "SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x86" "Version"
+    ${If} $0 == ""
+        ; 如果没有找到VC++ 2017运行时，尝试安装
+        DetailPrint "正在安装 Visual C++ 2017 Redistributable (x86)..."
+        File "vcredist_x86.exe"
+        ExecWait '"$INSTDIR\vcredist_x86.exe" /quiet /norestart' $1
+        ${If} $1 != 0
+            MessageBox MB_YESNO "Visual C++ 2017运行时安装失败。程序可能无法正常运行。是否继续安装？" IDYES +2
+            Abort
+        ${EndIf}
+        Delete "$INSTDIR\vcredist_x86.exe"
+    ${EndIf}
+
     ; 拷贝应用及依赖
     File /r "deploy\*.*"
 

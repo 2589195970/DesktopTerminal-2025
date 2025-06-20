@@ -204,12 +204,31 @@ public:
 #ifdef Q_OS_WIN
         QString ver=QSysInfo::productVersion();
         bool oldWin = ver.startsWith("6.0")||ver.startsWith("6.1")||ver.startsWith("5.");
-        if(oldWin) hw=false;
+        if(oldWin) {
+            hw=false;
+            // Windows 7特殊配置：强制禁用可能导致崩溃的功能
+            settings->setAttribute(QWebEngineSettings::PluginsEnabled,false);
+            settings->setAttribute(QWebEngineSettings::JavascriptCanOpenWindows,false);
+            settings->setAttribute(QWebEngineSettings::PlaybackRequiresUserGesture,true);
+            Logger::instance().appEvent("检测到Windows 7系统，启用兼容模式", L_INFO);
+        }
 #endif
         settings->setAttribute(QWebEngineSettings::WebGLEnabled,hw);
         settings->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled,hw);
         settings->setAttribute(QWebEngineSettings::ScreenCaptureEnabled,false);
         settings->setAttribute(QWebEngineSettings::WebRTCPublicInterfacesOnly,true);
+        
+        // Windows 7额外兼容性设置
+#ifdef Q_OS_WIN
+        if(oldWin) {
+            // 禁用GPU进程以避免崩溃
+            qputenv("QTWEBENGINE_DISABLE_GPU", "1");
+            qputenv("QTWEBENGINE_DISABLE_SANDBOX", "1");
+            // 强制软件渲染
+            qputenv("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu --disable-gpu-sandbox --disable-software-rasterizer --in-process-gpu");
+            Logger::instance().appEvent("应用Windows 7 WebEngine兼容性补丁", L_INFO);
+        }
+#endif
 
         load(QUrl(ConfigManager::instance().getUrl()));
         Logger::instance().appEvent("程序启动");

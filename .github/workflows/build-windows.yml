@@ -19,10 +19,10 @@ jobs:
     - name: Install Qt
       uses: jurplel/install-qt-action@v4
       with:
-        version: '5.15.2'
+        version: '5.12.12'
         host: 'windows'
         target: 'desktop'
-        arch: 'win32_msvc2019'
+        arch: 'win32_msvc2017'
         modules: 'qtwebengine'
         set-env: true
         tools-only: false
@@ -72,6 +72,13 @@ jobs:
         
         echo "完整部署目录结构："
         dir deploy /s
+    
+    - name: Download VC++ Runtime
+      shell: cmd
+      run: |
+        echo "下载VC++ 2017 Redistributable (x86)..."
+        curl -L -o vcredist_x86.exe "https://aka.ms/vs/15/release/vc_redist.x86.exe"
+        if exist vcredist_x86.exe (echo "VC++ Runtime下载成功") else (echo "ERROR: VC++ Runtime下载失败!")
     
     - name: Create installer with NSIS
       shell: cmd
