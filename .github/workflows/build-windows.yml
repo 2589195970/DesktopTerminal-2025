@@ -19,10 +19,10 @@ jobs:
     - name: Install Qt
       uses: jurplel/install-qt-action@v4
       with:
-        version: '5.12.12'
+        version: '5.9.9'
         host: 'windows'
         target: 'desktop'
-        arch: 'win32_msvc2017'
+        arch: 'win32_msvc2015'
         modules: 'qtwebengine'
         set-env: true
         tools-only: false
@@ -31,6 +31,7 @@ jobs:
       uses: ilammy/msvc-dev-cmd@v1
       with:
         arch: x86
+        toolset: 14.0
     
     - name: Configure CMake
       shell: cmd
@@ -76,8 +77,8 @@ jobs:
     - name: Download VC++ Runtime
       shell: cmd
       run: |
-        echo "下载VC++ 2017 Redistributable (x86)..."
-        curl -L -o vcredist_x86.exe "https://aka.ms/vs/15/release/vc_redist.x86.exe"
+        echo "下载VC++ 2015 Redistributable (x86)..."
+        curl -L -o vcredist_x86.exe "https://aka.ms/vs/14/release/vc_redist.x86.exe"
         if exist vcredist_x86.exe (echo "VC++ Runtime下载成功") else (echo "ERROR: VC++ Runtime下载失败!")
     
     - name: Create installer with NSIS

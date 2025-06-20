@@ -69,12 +69,12 @@ Section "主程序" SecMain
     
     ReadRegStr $0 HKLM "SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x86" "Version"
     ${If} "$0" == ""
-        ; 如果没有找到VC++ 2017运行时，尝试安装
-        DetailPrint "正在安装 Visual C++ 2017 Redistributable (x86)..."
+        ; 如果没有找到VC++ 2015运行时，尝试安装
+        DetailPrint "正在安装 Visual C++ 2015 Redistributable (x86)..."
         File "vcredist_x86.exe"
         ExecWait '"$INSTDIR\vcredist_x86.exe" /quiet /norestart' $1
         ${If} $1 != 0
-            MessageBox MB_YESNO "Visual C++ 2017运行时安装失败。程序可能无法正常运行。是否继续安装？" IDYES +2
+            MessageBox MB_YESNO "Visual C++ 2015运行时安装失败。程序可能无法正常运行。是否继续安装？" IDYES +2
             Abort
         ${EndIf}
         Delete "$INSTDIR\vcredist_x86.exe"
