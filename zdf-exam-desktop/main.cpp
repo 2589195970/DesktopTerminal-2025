@@ -32,6 +32,7 @@
 
 #ifdef Q_OS_WIN
 #include <windows.h>
+#include <versionhelpers.h>
 #include <iostream>
 #include <io.h>
 #include <fcntl.h>
@@ -482,37 +483,105 @@ void handleFatalError(const QString &errorMsg) {
                 "请联系技术支持并提供log文件夹中的所有日志文件。").arg(errorMsg));
 }
 
+// Windows API兼容性检查函数
+#ifdef Q_OS_WIN
+bool checkWindowsAPICompatibility() {
+    // 检查是否支持CreateFile2 API（Windows 8+）
+    HMODULE kernel32 = GetModuleHandleA("kernel32.dll");
+    if (!kernel32) return false;
+    
+    // 检查关键API的可用性
+    bool hasCreateFile2 = (GetProcAddress(kernel32, "CreateFile2") != nullptr);
+    bool hasSetFileInformationByHandle = (GetProcAddress(kernel32, "SetFileInformationByHandle") != nullptr);
+    
+    return hasCreateFile2 && hasSetFileInformationByHandle;
+}
+
+// 获取准确的Windows版本信息
+QString getDetailedWindowsVersion() {
+    if (IsWindows10OrGreater()) return "10+";
+    if (IsWindows8Point1OrGreater()) return "8.1";
+    if (IsWindows8OrGreater()) return "8";
+    if (IsWindows7SP1OrGreater()) return "7 SP1";
+    if (IsWindows7OrGreater()) return "7";
+    if (IsWindowsVistaOrGreater()) return "Vista";
+    return "XP或更早";
+}
+#endif
+
 // --------------------------- main ---------------------------
 int main(int argc,char *argv[]){
-    // ============ Windows版本检测 ============
+    // ============ Windows版本检测和API兼容性验证 ============
+    // 声明变量以确保在整个main函数中可访问
+    bool isWin7OrOlder = false;
+    bool hasAPICompatibility = true;
+    QString detailedVersion;
+    
 #ifdef Q_OS_WIN
     QString winVer = QSysInfo::productVersion();
     QVersionNumber winVersion = QVersionNumber::fromString(winVer);
-    bool isWin7OrOlder = winVersion.majorVersion() < 6 || 
-                        (winVersion.majorVersion() == 6 && winVersion.minorVersion() <= 1);
+    isWin7OrOlder = winVersion.majorVersion() < 6 || 
+                   (winVersion.majorVersion() == 6 && winVersion.minorVersion() <= 1);
+    
+    // 详细版本检测
+    detailedVersion = getDetailedWindowsVersion();
+    hasAPICompatibility = checkWindowsAPICompatibility();
+    
+    // 如果是Windows 7且缺少关键API，提前警告
+    if (isWin7OrOlder && !hasAPICompatibility) {
+        MessageBoxA(nullptr, 
+            "检测到您使用的是Windows 7系统，但缺少程序运行所需的API。\n\n"
+            "这通常是由于：\n"
+            "1. 系统未安装最新的Windows更新\n"
+            "2. 缺少必要的运行时库\n"
+            "3. Qt WebEngine与当前系统不兼容\n\n"
+            "建议：\n"
+            "- 安装所有Windows更新\n"
+            "- 安装Visual C++ 2019-2022运行时\n"
+            "- 考虑升级到Windows 10或更高版本\n\n"
+            "程序将尝试以兼容模式运行，但可能存在功能限制。",
+            "兼容性警告", MB_OK | MB_ICONWARNING);
+    }
 #else
-    bool isWin7OrOlder = false;
+    detailedVersion = "非Windows系统";
 #endif
 
     // ============ 关键修复：彻底禁用硬件加速解决黑屏和高CPU问题 ============
 #ifdef Q_OS_WIN
     if (isWin7OrOlder) {
-        // Windows 7及更老版本：彻底禁用GPU进程和硬件加速
-        qputenv("QTWEBENGINE_CHROMIUM_FLAGS", 
-                "--disable-gpu "
-                "--disable-gpu-compositing "
-                "--disable-gpu-rasterization "
-                "--disable-gpu-sandbox "
-                "--disable-software-rasterizer "
-                "--disable-backgrounding-occluded-windows "
-                "--disable-renderer-backgrounding "
-                "--disable-background-timer-throttling "
-                "--disable-background-networking "
-                "--disable-default-apps "
-                "--disable-extensions "
-                "--disable-sync "
-                "--no-sandbox "
-                "--single-process");
+        // Windows 7及更老版本：彻底禁用GPU进程和硬件加速，并添加API兼容性标志
+        QString chromiumFlags = "--disable-gpu "
+                               "--disable-gpu-compositing "
+                               "--disable-gpu-rasterization "
+                               "--disable-gpu-sandbox "
+                               "--disable-software-rasterizer "
+                               "--disable-backgrounding-occluded-windows "
+                               "--disable-renderer-backgrounding "
+                               "--disable-background-timer-throttling "
+                               "--disable-background-networking "
+                               "--disable-default-apps "
+                               "--disable-extensions "
+                               "--disable-sync "
+                               "--no-sandbox "
+                               "--single-process "
+                               "--disable-features=VizDisplayCompositor,VizHitTestSurfaceLayer "
+                               "--disable-dev-shm-usage "
+                               "--disable-web-security "
+                               "--allow-running-insecure-content "
+                               "--ignore-certificate-errors "
+                               "--disable-logging "
+                               "--log-level=3";
+        
+        // 针对API兼容性问题，添加更多兼容性标志
+        if (!hasAPICompatibility) {
+            chromiumFlags += " --disable-features=AudioServiceOutOfProcess,AudioServiceSandbox"
+                           " --disable-ipc-flooding-protection"
+                           " --disable-renderer-accessibility"
+                           " --disable-win32k-lockdown"
+                           " --disable-features=WinUseBrowserSpellChecker";
+        }
+        
+        qputenv("QTWEBENGINE_CHROMIUM_FLAGS", chromiumFlags.toLocal8Bit());
         
         // 禁用GPU线程避免卡顿
         qputenv("QTWEBENGINE_DISABLE_GPU_THREAD", "1");
@@ -520,6 +589,10 @@ int main(int argc,char *argv[]){
         // 强制软件渲染
         qputenv("QT_OPENGL", "software");
         qputenv("QT_ANGLE_PLATFORM", "d3d9");
+        
+        // 强制使用兼容性模式
+        qputenv("QTWEBENGINE_CHROMIUM_FLAGS_DISABLE_GPU", "1");
+        qputenv("QTWEBENGINE_REMOTE_DEBUGGING", "0");
         
         // 日志将在QApplication创建后记录
     } else {
@@ -607,14 +680,33 @@ int main(int argc,char *argv[]){
         handleFatalError(errorMsg);
         return 1;
     } catch (...) {
-        QString errorMsg = QString("程序启动过程中发生未知异常，这通常是由于:\n"
-                          "1. QtWebEngine无法初始化（GPU/显卡驱动问题）\n"
-                          "2. 系统资源不足（内存/CPU）\n"
-                          "3. 虚拟机环境兼容性问题\n\n"
-                          "建议检查：\n"
-                          "- 更新显卡驱动\n"
-                          "- 增加虚拟机内存分配\n"
-                          "- 确保config.json中disableHardwareAcceleration设为true");
+        QString errorMsg;
+        
+#ifdef Q_OS_WIN
+        if (isWin7OrOlder && !hasAPICompatibility) {
+            errorMsg = QString("程序启动失败：Windows 7 API兼容性问题\n\n"
+                      "您的系统缺少程序运行所需的API（CreateFile2等）。\n\n"
+                      "解决方案：\n"
+                      "1. 安装所有Windows 7更新（特别是KB2533623）\n"
+                      "2. 安装Microsoft Visual C++ 2019-2022运行时\n"
+                      "3. 安装.NET Framework 4.7.2或更高版本\n"
+                      "4. 考虑升级到Windows 10/11以获得最佳兼容性\n\n"
+                      "技术详情：Qt WebEngine需要Windows 8+的API，\n"
+                      "但可以通过系统更新在Windows 7上运行。");
+        } else {
+            errorMsg = QString("程序启动过程中发生未知异常，这通常是由于:\n"
+                              "1. QtWebEngine无法初始化（GPU/显卡驱动问题）\n"
+                              "2. 系统资源不足（内存/CPU）\n"
+                              "3. 虚拟机环境兼容性问题\n\n"
+                              "建议检查：\n"
+                              "- 更新显卡驱动\n"
+                              "- 增加虚拟机内存分配\n"
+                              "- 确保config.json中disableHardwareAcceleration设为true");
+        }
+#else
+        errorMsg = QString("程序启动过程中发生未知异常，请检查系统兼容性");
+#endif
+        
         handleFatalError(errorMsg);
         return 1;
     }
