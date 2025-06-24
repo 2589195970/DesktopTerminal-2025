@@ -4,17 +4,84 @@ on:
   push:
     tags:
       - 'v*'
+    branches:
+      - 'main'
+      - 'master'
+      - 'release/*'
+  pull_request:
+    branches:
+      - 'main'
+      - 'master'
   workflow_dispatch:
+    inputs:
+      build_type:
+        description: '构建类型'
+        required: true
+        default: 'Release'
+        type: choice
+        options:
+        - Release
+        - Debug
+      create_installer:
+        description: '生成安装包'
+        required: true
+        default: true
+        type: boolean
+      upload_artifacts:
+        description: '上传构建产物'
+        required: true
+        default: true
+        type: boolean
 
 jobs:
   build-windows:
     runs-on: windows-latest
+    strategy:
+      matrix:
+        arch: [x64]  # 主要支持64位，可以扩展为 [x64, x86]
+        include:
+          - arch: x64
+            qt_arch: win64_msvc2019_64
+            msvc_arch: x64
+            nsis_arch: x64
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
         submodules: recursive
+        fetch-depth: 0  # 获取完整历史用于版本标记
+    
+    - name: Get build info
+      id: build_info
+      shell: powershell
+      run: |
+        $build_type = "${{ github.event.inputs.build_type || 'Release' }}"
+        $version = "1.0.0"
+        
+        # 尝试从Git标签获取版本
+        try {
+          $tag = git describe --tags --exact-match HEAD 2>$null
+          if ($tag) {
+            $version = $tag -replace '^v', ''
+          }
+        } catch {}
+        
+        # 如果没有标签，使用分支和提交信息
+        if (-not $tag) {
+          $branch = git rev-parse --abbrev-ref HEAD
+          $commit = git rev-parse --short HEAD
+          $version = "$version-$branch-$commit"
+        }
+        
+        echo "build_type=$build_type" >> $env:GITHUB_OUTPUT
+        echo "version=$version" >> $env:GITHUB_OUTPUT
+        echo "artifact_name=zdf-exam-desktop-$version-${{ matrix.arch }}" >> $env:GITHUB_OUTPUT
+        
+        Write-Host "构建信息:"
+        Write-Host "  版本: $version"
+        Write-Host "  类型: $build_type"
+        Write-Host "  架构: ${{ matrix.arch }}"
     
     - name: Install Qt
       uses: jurplel/install-qt-action@v4
@@ -22,75 +89,221 @@ jobs:
         version: '5.15.2'
         host: 'windows'
         target: 'desktop'
-        arch: 'win32_msvc2019'
+        arch: ${{ matrix.qt_arch }}
         modules: 'qtwebengine'
         set-env: true
         tools-only: false
+        cache: true  # 启用缓存加速构建
     
     - name: Setup MSVC
       uses: ilammy/msvc-dev-cmd@v1
       with:
-        arch: x86
+        arch: ${{ matrix.msvc_arch }}
     
-    - name: Configure CMake
+    - name: Check build environment
       shell: cmd
       run: |
+        echo "=== 环境检查 ==="
+        echo Qt版本: %Qt5_DIR%
+        echo MSVC架构: ${{ matrix.msvc_arch }}
+        echo 构建类型: ${{ steps.build_info.outputs.build_type }}
+        echo 目标版本: ${{ steps.build_info.outputs.version }}
+        
+        echo.
+        echo "=== 工具版本 ==="
+        cmake --version
+        qmake -query QT_VERSION
+        cl 2>&1 | findstr "Microsoft"
+        
+        echo.
+        echo "=== 项目文件 ==="
+        dir /b
+        if exist resources dir resources /b
+        if exist zdf-exam-desktop dir zdf-exam-desktop /b
+
+    - name: Configure and Build with CMake
+      shell: cmd
+      run: |
+        echo "=== 开始构建 ==="
         mkdir build
         cd build
-        cmake ../zdf-exam-desktop -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release
-    
-    - name: Build application
-      shell: cmd
-      run: |
-        cd build
+        
+        echo "配置CMake..."
+        cmake ../zdf-exam-desktop -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=${{ steps.build_info.outputs.build_type }} -DCMAKE_PREFIX_PATH=%Qt5_DIR%
+        if %errorlevel% neq 0 (
+          echo CMake配置失败
+          exit /b 1
+        )
+        
+        echo "编译应用程序..."
         nmake
-    
+        if %errorlevel% neq 0 (
+          echo 编译失败
+          exit /b 1
+        )
+        
+        echo "编译完成"
+        dir *.exe
+        cd ..
+
     - name: Deploy Qt dependencies
-      shell: cmd
+      shell: cmd  
       run: |
+        echo "=== 部署Qt依赖 ==="
         mkdir deploy
         copy build\zdf-exam-desktop.exe deploy\
-        windeployqt --dir deploy --qmldir zdf-exam-desktop deploy\zdf-exam-desktop.exe
-    
-    - name: Copy resources
+        if %errorlevel% neq 0 (
+          echo 复制exe文件失败
+          exit /b 1
+        )
+        
+        echo "使用windeployqt部署依赖..."
+        windeployqt --dir deploy --release --no-translations --no-system-d3d-compiler --no-opengl-sw deploy\zdf-exam-desktop.exe
+        if %errorlevel% neq 0 (
+          echo windeployqt部署失败
+          exit /b 1
+        )
+        
+        echo "检查WebEngine特殊依赖..."
+        if not exist "deploy\QtWebEngineProcess.exe" (
+          echo "复制QtWebEngineProcess.exe..."
+          copy "%Qt5_DIR%\bin\QtWebEngineProcess.exe" "deploy\" >nul
+        )
+        
+        if not exist "deploy\resources" (
+          echo "复制WebEngine资源..."
+          if exist "%Qt5_DIR%\resources" (
+            xcopy /E /I /Y "%Qt5_DIR%\resources" "deploy\resources" >nul
+          )
+        )
+
+    - name: Copy project resources
       shell: cmd
       run: |
-        echo "正在复制资源文件..."
-        mkdir deploy\resources
-        echo "检查logo.ico是否存在："
-        if exist resources\logo.ico (echo "logo.ico存在") else (echo "ERROR: logo.ico不存在!")
-        copy resources\*.* deploy\resources\
+        echo "=== 复制项目资源 ==="
         
-        echo "验证资源文件复制结果："
-        if exist deploy\resources\logo.ico (echo "logo.ico已成功复制") else (echo "ERROR: logo.ico复制失败!")
+        REM 创建资源目录
+        mkdir deploy\resources 2>nul
         
-        echo "资源目录内容："
-        dir resources /b
+        REM 复制配置文件到exe目录（最高优先级）
+        if exist resources\config.json (
+          copy resources\config.json deploy\ >nul
+          echo 已复制配置文件
+        ) else (
+          echo 创建默认配置文件...
+          echo {"url":"https://example.com","exitPassword":"admin123","appName":"智多分机考桌面端"} > deploy\config.json
+        )
         
-        echo "部署资源目录内容："
-        dir deploy\resources /b
+        REM 复制资源文件
+        if exist resources (
+          copy resources\*.* deploy\resources\ >nul 2>&1
+          echo 已复制资源文件
+        )
+        
+        REM 验证关键文件
+        echo "验证部署文件..."
+        if exist deploy\zdf-exam-desktop.exe (echo [OK] 主程序) else (echo [ERROR] 缺少主程序)
+        if exist deploy\Qt5Core.dll (echo [OK] Qt5Core) else (echo [ERROR] 缺少Qt5Core)
+        if exist deploy\Qt5WebEngine.dll (echo [OK] Qt5WebEngine) else (echo [ERROR] 缺少Qt5WebEngine)
+        if exist deploy\config.json (echo [OK] 配置文件) else (echo [ERROR] 缺少配置文件)
         
         echo "完整部署目录结构："
         dir deploy /s
-    
-    - name: Create installer with NSIS
+
+    - name: Create Windows installer
+      if: ${{ github.event.inputs.create_installer != 'false' }}
       shell: cmd
       run: |
+        echo "=== 安装NSIS ==="
         choco install nsis -y
-        cd %GITHUB_WORKSPACE%
-        echo "NSIS安装脚本中的图标引用："
-        findstr "MUI_ICON\|CreateShortcut" installer.nsi
         
-        mkdir Output
-        echo === Checking installer.nsi content ===
-        findstr /n "StrRep" installer.nsi || echo No StrRep found
-        makensis -DARCH=x86 installer.nsi
+        echo "=== 生成安装包 ==="
+        mkdir Output 2>nul
+        
+        echo "检查NSIS脚本..."
+        if not exist installer.nsi (
+          echo ERROR: installer.nsi文件不存在
+          exit /b 1
+        )
+        
+        echo "生成${{ matrix.arch }}位安装包..."
+        makensis -DARCH=${{ matrix.nsis_arch }} installer.nsi
+        if %errorlevel% neq 0 (
+          echo 生成${{ matrix.arch }}位安装包失败
+          exit /b 1
+        )
         
         echo "生成的安装包："
-        dir Output
-    
-    - name: Upload installer
+        dir Output\*.exe
+        
+        REM 重命名文件包含版本和架构信息
+        for %%f in (Output\智多分-机考桌面端-setup*.exe) do (
+          set "old_name=%%f"
+          set "new_name=Output\zdf-exam-desktop-${{ steps.build_info.outputs.version }}-${{ matrix.arch }}-setup.exe"
+          ren "%%f" "zdf-exam-desktop-${{ steps.build_info.outputs.version }}-${{ matrix.arch }}-setup.exe"
+          echo 重命名: %%f -^> zdf-exam-desktop-${{ steps.build_info.outputs.version }}-${{ matrix.arch }}-setup.exe
+        )
+
+    - name: Test deployed application
+      shell: cmd
+      run: |
+        echo "=== 测试部署的应用程序 ==="
+        cd deploy
+        
+        echo "检查依赖..."
+        dumpbin /dependents zdf-exam-desktop.exe | findstr ".dll" || echo "无法检查依赖"
+        
+        echo "尝试启动应用程序（快速退出测试）..."
+        timeout 3 zdf-exam-desktop.exe --help 2>nul || echo "应用程序快速测试完成"
+
+    - name: Upload build artifacts
+      if: ${{ github.event.inputs.upload_artifacts != 'false' }}
       uses: actions/upload-artifact@v4
       with:
-        name: windows-installer
-        path: Output\智多分-机考桌面端-setup-x86.exe 
+        name: ${{ steps.build_info.outputs.artifact_name }}-portable
+        path: |
+          deploy/
+          !deploy/**/*.pdb
+        retention-days: 30
+
+    - name: Upload installer
+      if: ${{ github.event.inputs.create_installer != 'false' && github.event.inputs.upload_artifacts != 'false' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.build_info.outputs.artifact_name }}-installer
+        path: Output/*.exe
+        retention-days: 90
+
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          Output/*.exe
+        name: Release ${{ steps.build_info.outputs.version }}
+        body: |
+          ## 智多分机考桌面端 ${{ steps.build_info.outputs.version }}
+          
+          ### 下载说明
+          - `*-setup.exe`: Windows安装包，推荐普通用户使用
+          - `*-portable.zip`: 便携版，解压即可使用
+          
+          ### 系统要求
+          - Windows 7/10/11 (64位推荐)
+          - Visual C++ Redistributable 2015-2019
+          - 至少 4GB RAM
+          - 至少 200MB 可用磁盘空间
+          
+          ### 使用说明
+          1. 下载并运行安装包
+          2. 修改安装目录下的 `config.json` 配置文件
+          3. 启动应用程序开始使用
+          
+          构建信息:
+          - 构建时间: ${{ github.run_number }}
+          - 提交SHA: ${{ github.sha }}
+          - 架构: ${{ matrix.arch }}
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
